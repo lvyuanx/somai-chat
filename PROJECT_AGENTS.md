@@ -20,6 +20,14 @@
 ## 会话与部署
 
 MVP 使用进程内 Checkpointer 和会话并发控制，仅支持单进程部署。引入共享状态基础设施前，不得直接进行多进程或多实例横向扩容。
+服务重启会丢失全部对话状态。生产容器必须以非 root 用户运行，并通过 `python -m somai_chat.main` 启动，确保监听配置和 WebSocket 帧上限来自同一 Settings。
+
+## API 与日志契约
+
+- 健康检查为 `/health/live` 与 `/health/ready`；就绪探针不得调用外部模型。
+- 对话地址为 `/api/v1/chat/ws/{conversation_id}`，事件使用 `type/event_id/timestamp/data` 统一信封。
+- 浏览器 Origin 必须匹配集中配置；设备客户端可以不发送 Origin；文本同时受字符数和 UTF-8 帧字节限制。
+- 日志只允许固定消息、connection/conversation/message/response ID 与稳定错误码，不记录正文、回复、密钥或供应商原始错误。
 
 ## 开发流程
 
@@ -35,3 +43,6 @@ MVP 使用进程内 Checkpointer 和会话并发控制，仅支持单进程部�
 - `make typecheck`：运行严格 mypy 检查。
 - `make test`：运行测试。
 - `make check`：依次运行 lint、typecheck 和 test。
+- `node tests/js/web_console_state.mjs` 与 `node tests/js/console_view.mjs`：验证浏览器协议状态机与有界视图。
+- `uv build`：构建包含调试台静态资源的 wheel 与 sdist。
+- `docker build -t somai-chat:mvp .`：构建 Python 3.12 slim 非 root 生产镜像。

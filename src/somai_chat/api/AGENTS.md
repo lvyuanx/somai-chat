@@ -92,3 +92,5 @@ readiness 不调用 Runtime 或模型。
 - 对外错误必须使用 `core.errors.ErrorCode` 中的稳定错误码和安全消息，不得携带内部异常。
 - 未就绪连接在握手后以 1013 关闭，策略错误以 1008 关闭，均不发送 `conversation.ready`。
 - 传输日志只记录关联 ID、错误码和固定消息，不记录消息正文、模型文本或密钥。
+- 公开错误码的最终集合为 `INVALID_MESSAGE`、`GENERATION_IN_PROGRESS`、`CANCEL_NOT_FOUND`、
+  `MODEL_UNAVAILABLE`、`GENERATION_FAILED`；运行时未装配在握手阶段以 1013 关闭，不伪造成模型调用错误。

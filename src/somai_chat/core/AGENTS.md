@@ -78,3 +78,5 @@
 或供应商原始错误插入日志消息。
 结构化关联字段包括 `connection_id`、`conversation_id`、`message_id`、
 `response_id` 与 `error_code`，其他 extra 字段不会序列化。
+容器和 wheel 不携带 `.env`；运行时必须显式注入必填模型字段。模型配置不可用时组合根降级为
+liveness/静态页可用、readiness 503，而不是在健康探针中请求供应商。

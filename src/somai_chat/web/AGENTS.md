@@ -67,3 +67,5 @@ Markdown 仅支持段落、一级至三级标题、列表、围栏代码、行�
 - 页面不加载外部字体、脚本、样式或 CDN 资源。
 - HTTP 响应通过应用中间件设置 CSP、`nosniff` 和未指纹页面/资源的 `no-cache`；
   CSP 的 WebSocket 目标只允许经过字符与 URL 结构校验的当前 Host，不允许裸 `ws:`/`wss:` scheme。
+- `index.html`、`app.css`、`responsive.css`、`app.js`、`view.js`、`markdown.js` 必须作为 Python wheel
+  包数据分发；安装后的应用从任意当前工作目录都应能提供页面和 `/assets/`。
