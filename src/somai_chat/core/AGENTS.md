@@ -55,8 +55,11 @@
 ## 配置说明
 
 必填项为 OpenAI 兼容 API Key 与模型名称，两者都会去除首尾空白并拒绝空值。
-基础 URL、生成参数、消息字符数、WebSocket 原始文本字节数及允许来源均在此集中定义。
+服务监听地址/端口、基础 URL、生成参数、消息字符数、WebSocket 原始文本字节数
+及允许来源均在此集中定义。
 `max_websocket_message_bytes` 默认 32768，并必须为正数；生产 Uvicorn 也使用相同值限制帧大小。
+`python -m somai_chat.main` 先解析同一份 Settings，再把 host、port、开发环境 reload 状态及
+`max_websocket_message_bytes` 传给 Uvicorn，避免服务层和应用层限制漂移。
 允许来源只接受不含路径、查询、片段和用户信息的 HTTP/HTTPS Origin；主机转小写，
 默认 80/443 端口省略后再保存，localhost、IPv4 和 IPv6 均可使用。
 

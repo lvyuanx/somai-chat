@@ -43,6 +43,19 @@ def test_settings_defaults_websocket_byte_limit() -> None:
     assert settings.max_websocket_message_bytes == 32768
 
 
+def test_settings_default_server_bind() -> None:
+    settings = Settings(openai_api_key="secret", openai_model="chat-model")
+
+    assert settings.host == "0.0.0.0"
+    assert settings.port == 8000
+
+
+@pytest.mark.parametrize("port", [0, 65536])
+def test_settings_reject_out_of_range_server_port(port: int) -> None:
+    with pytest.raises(ValidationError):
+        Settings(openai_api_key="secret", openai_model="chat-model", port=port)
+
+
 @pytest.mark.parametrize(
     ("origin", "expected"),
     [
@@ -144,7 +157,7 @@ def test_settings_load_from_dotenv_file(tmp_path: Path, monkeypatch: pytest.Monk
     assert str(settings.openai_base_url).rstrip("/") == "https://dotenv.example/v1"
 
 
-def test_dev_target_runs_uvicorn_with_websocket_size_limit() -> None:
+def test_dev_target_uses_module_server_entrypoint() -> None:
     project_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         ["make", "-n", "dev"],
@@ -156,9 +169,9 @@ def test_dev_target_runs_uvicorn_with_websocket_size_limit() -> None:
     )
 
     output = result.stdout + result.stderr
-    assert "uvicorn somai_chat.main:app" in output
-    assert "--ws-max-size" in output
-    assert "SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES" in output
+    assert "uv run python -m somai_chat.main" in output
+    assert "uvicorn somai_chat.main:app" not in output
+    assert "SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES" not in output
     assert "API entry point is not implemented yet" not in output
 
 
@@ -166,3 +179,5 @@ def test_example_environment_documents_websocket_size_limit() -> None:
     project_root = Path(__file__).resolve().parents[2]
 
     assert "SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES=32768" in (project_root / ".env.example").read_text()
+    assert "SOMAI_HOST=0.0.0.0" in (project_root / ".env.example").read_text()
+    assert "SOMAI_PORT=8000" in (project_root / ".env.example").read_text()

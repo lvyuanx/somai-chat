@@ -231,6 +231,19 @@ def test_json_value_errors_map_to_invalid_message_and_connection_recovers(payloa
         assert socket.receive_json()["type"] == "pong"
 
 
+def test_deeply_nested_json_maps_to_invalid_message_and_connection_recovers() -> None:
+    payload = "[" * 10000 + "0" + "]" * 10000
+    with app_client() as client, client.websocket_connect("/api/v1/chat/ws/conv_depth") as socket:
+        socket.receive_json()
+        socket.send_text(payload)
+        assert socket.receive_json()["data"]["code"] == "INVALID_MESSAGE"
+        socket.send_json({"type": "ping", "data": {"correlation_id": "after_depth"}})
+        pong = socket.receive_json()
+
+    assert pong["type"] == "pong"
+    assert pong["data"]["correlation_id"] == "after_depth"
+
+
 def test_busy_cancel_and_cancel_not_found_are_recoverable() -> None:
     runtime = BlockingRuntime()
     with app_client(runtime) as client, client.websocket_connect("/api/v1/chat/ws/conv_test") as socket:

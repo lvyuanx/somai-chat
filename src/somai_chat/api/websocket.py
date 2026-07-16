@@ -113,7 +113,7 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
                     payload = json.loads(text)
                 except json.JSONDecodeError:
                     raise _invalid_message() from None
-                except (ValueError, UnicodeEncodeError):
+                except (ValueError, UnicodeEncodeError, RecursionError):
                     raise _invalid_message() from None
                 event = parse_client_event(payload, settings.max_message_length)
                 if isinstance(event, MessageCreate):

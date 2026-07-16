@@ -5,6 +5,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import uvicorn
 from fastapi import FastAPI
 
 from somai_chat.agent.graph import build_conversation_graph
@@ -73,3 +74,20 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
 
 
 app = create_app()
+
+
+def run() -> None:
+    """Run Uvicorn with the same validated settings used by the application."""
+
+    settings = get_settings()
+    uvicorn.run(
+        "somai_chat.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=settings.environment == "development",
+        ws_max_size=settings.max_websocket_message_bytes,
+    )
+
+
+if __name__ == "__main__":
+    run()

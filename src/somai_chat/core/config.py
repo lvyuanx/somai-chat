@@ -59,6 +59,8 @@ class Settings(BaseSettings):
 
     environment: Literal["development", "test", "production"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    host: str = Field(default="0.0.0.0", min_length=1)
+    port: int = Field(default=8000, ge=1, le=65535)
     openai_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
     openai_api_key: SecretStr
     openai_model: str = Field(min_length=1)

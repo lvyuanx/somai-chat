@@ -7,8 +7,7 @@ install:
 	uv pip install --python $(PYTHON) -e '.[dev]'
 
 dev:
-	uv run uvicorn somai_chat.main:app --reload --host 0.0.0.0 --port 8000 \
-		--ws-max-size $${SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES:-32768}
+	uv run python -m somai_chat.main
 
 format:
 	$(PYTHON) -m ruff format .
