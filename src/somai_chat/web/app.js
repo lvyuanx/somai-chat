@@ -1,16 +1,10 @@
-import {markdownNodes} from "./markdown.js";
+import {codePointLength, createConsoleView} from "./view.js";
 (() => {
   "use strict";
 
   const DEFAULT_MAX_MESSAGE_LENGTH = 8000;
   const DEFAULT_MAX_FRAME_BYTES = 32768;
-  const MAX_TRACE_EVENTS = 120;
-  const MAX_TRACE_CODE_POINTS = 12000;
-  const MAX_TIMELINE_MESSAGES = 100;
-  const MAX_RESPONSE_CODE_POINTS = 100000;
   const MAX_RECONNECT_ATTEMPTS = 5;
-  const RESPONSE_TRUNCATED_NOTICE = "\n\n[Response truncated at the local display limit.]";
-  const TRACE_TRUNCATED_NOTICE = "\n… [trace truncated]";
   const CONVERSATION_PATTERN = /^conv_[A-Za-z0-9_-]{1,123}$/;
   const STORAGE_KEY = "somai.conversation_id";
   const elements = {
@@ -28,6 +22,12 @@ import {markdownNodes} from "./markdown.js";
     newSession: document.getElementById("new-session"),
     clearDisplay: document.getElementById("clear-display"),
   };
+  const view = createConsoleView({
+    document,
+    window,
+    elements: {timeline: elements.timeline, trace: elements.trace, liveStatus: elements.liveStatus},
+    limits: {responseCodePoints: 100000, timelineMessages: 100, traceEvents: 120, traceCodePoints: 12000},
+  });
   const state = {
     conversationId: restoreConversationId(),
     socket: null,
@@ -37,8 +37,6 @@ import {markdownNodes} from "./markdown.js";
     phase: "idle",
     pendingMessageId: null,
     activeResponseId: null,
-    activeAssistant: null,
-    renderFrameId: null,
     reconnectAttempts: 0,
     reconnectTimer: null,
     intentionalClose: false,
@@ -86,145 +84,9 @@ import {markdownNodes} from "./markdown.js";
     updateControls();
   }
 
-  function codePointLength(value) {
-    return Array.from(value).length;
-  }
-
-  function boundedText(value, limit) {
-    const points = [];
-    let truncated = false;
-    for (const point of value) {
-      if (points.length >= limit) {
-        truncated = true;
-        break;
-      }
-      points.push(point);
-    }
-    return {text: points.join(""), count: points.length, truncated};
-  }
-
-  function announce(message) {
-    elements.liveStatus.textContent = message;
-  }
-
   function showLocalError(message) {
-    appendMessage("system", message, {error: true});
-    announce(`Error: ${message}`);
-  }
-
-  function renderBody(body, content, streaming) {
-    while (body.firstChild) {
-      body.removeChild(body.firstChild);
-    }
-    body.append(markdownNodes(content));
-    if (streaming) {
-      const cursor = document.createElement("span");
-      cursor.className = "streaming-cursor";
-      cursor.setAttribute("aria-label", "Response streaming");
-      body.append(cursor);
-    }
-  }
-
-  function trimTimeline(protectedArticle) {
-    while (elements.timeline.childElementCount > MAX_TIMELINE_MESSAGES) {
-      const activeArticle = state.activeAssistant ? state.activeAssistant.article : null;
-      const removable = Array.from(elements.timeline.children).find(
-        (node) => node !== activeArticle && node !== protectedArticle,
-      );
-      if (!removable) {
-        return;
-      }
-      elements.timeline.removeChild(removable);
-    }
-  }
-
-  function appendMessage(role, content, options = {}) {
-    const article = document.createElement("article");
-    const meta = document.createElement("div");
-    const body = document.createElement("div");
-    article.className = `message message--${role}${options.error ? " message--error" : ""}`;
-    meta.className = "message__meta";
-    meta.textContent = role === "assistant" ? "SOMAI" : role;
-    body.className = "message__body";
-    renderBody(body, content, Boolean(options.streaming));
-    article.append(meta, body);
-    elements.timeline.append(article);
-    trimTimeline(article);
-    elements.timeline.scrollTop = elements.timeline.scrollHeight;
-    return {article, body, content, codePointCount: codePointLength(content), truncated: false};
-  }
-
-  function appendTrace(direction, event) {
-    const item = document.createElement("li");
-    const directionNode = document.createElement("span");
-    const payload = document.createElement("pre");
-    item.className = "trace-event";
-    directionNode.className = "trace-event__direction";
-    directionNode.textContent = direction;
-    payload.className = "trace-event__payload";
-    const serialized = JSON.stringify(event, null, 2);
-    const bounded = boundedText(serialized, MAX_TRACE_CODE_POINTS);
-    payload.textContent = bounded.text + (bounded.truncated ? TRACE_TRUNCATED_NOTICE : "");
-    item.append(directionNode, payload);
-    elements.trace.append(item);
-    while (elements.trace.childElementCount > MAX_TRACE_EVENTS) {
-      elements.trace.removeChild(elements.trace.firstElementChild);
-    }
-    elements.trace.scrollTop = elements.trace.scrollHeight;
-  }
-
-  function assistantDisplayContent() {
-    if (!state.activeAssistant) {
-      return "";
-    }
-    return state.activeAssistant.content
-      + (state.activeAssistant.truncated ? RESPONSE_TRUNCATED_NOTICE : "");
-  }
-
-  function renderActiveAssistant(streaming) {
-    if (!state.activeAssistant) {
-      return;
-    }
-    renderBody(state.activeAssistant.body, assistantDisplayContent(), streaming);
-    elements.timeline.scrollTop = elements.timeline.scrollHeight;
-  }
-
-  function cancelScheduledRender() {
-    if (state.renderFrameId !== null) {
-      window.cancelAnimationFrame(state.renderFrameId);
-      state.renderFrameId = null;
-    }
-  }
-
-  function scheduleAssistantRender() {
-    if (state.renderFrameId !== null) {
-      return;
-    }
-    state.renderFrameId = window.requestAnimationFrame(() => {
-      state.renderFrameId = null;
-      renderActiveAssistant(true);
-    });
-  }
-
-  function appendAssistantDelta(delta) {
-    if (!state.activeAssistant || state.activeAssistant.truncated) {
-      return;
-    }
-    const remaining = MAX_RESPONSE_CODE_POINTS - state.activeAssistant.codePointCount;
-    const bounded = boundedText(delta, remaining);
-    state.activeAssistant.content += bounded.text;
-    state.activeAssistant.codePointCount += bounded.count;
-    state.activeAssistant.truncated = bounded.truncated;
-  }
-
-  function replaceAssistantContent(content) {
-    if (!state.activeAssistant) {
-      return;
-    }
-    const bounded = boundedText(content, MAX_RESPONSE_CODE_POINTS);
-    state.activeAssistant.content = bounded.text;
-    state.activeAssistant.codePointCount = bounded.count;
-    state.activeAssistant.truncated = bounded.truncated;
+    view.appendMessage("system", message, {error: true});
+    view.announce(`Error: ${message}`);
   }
 
   function updateControls() {
@@ -243,19 +105,17 @@ import {markdownNodes} from "./markdown.js";
   }
 
   function resetRequestState() {
-    cancelScheduledRender();
+    view.discardAssistant();
     state.phase = "idle";
     state.pendingMessageId = null;
     state.activeResponseId = null;
-    state.activeAssistant = null;
   }
 
   function finishGeneration(label, error = false) {
-    cancelScheduledRender();
-    renderActiveAssistant(false);
+    view.finishAssistant();
     resetRequestState();
     if (label) {
-      appendMessage("system", label, {error});
+      view.appendMessage("system", label, {error});
     }
     updateControls();
     elements.input.focus();
@@ -287,7 +147,7 @@ import {markdownNodes} from "./markdown.js";
       applyReadyLimits(data);
       elements.model.textContent = typeof data.model === "string" ? data.model : "configured runtime";
       setStatus("Ready", "ready");
-      announce("Conversation ready.");
+      view.announce("Conversation ready.");
     } else if (event.type === "response.started") {
       if (state.phase !== "pending" || data.message_id !== state.pendingMessageId) {
         return;
@@ -298,22 +158,21 @@ import {markdownNodes} from "./markdown.js";
       state.pendingMessageId = null;
       state.activeResponseId = data.response_id;
       state.phase = "streaming";
-      state.activeAssistant = appendMessage("assistant", "", {streaming: true});
+      view.startAssistant();
       updateControls();
-    } else if (event.type === "response.delta" && matchesActiveResponse(data) && state.activeAssistant) {
+    } else if (event.type === "response.delta" && matchesActiveResponse(data)) {
       if (typeof data.delta === "string") {
-        appendAssistantDelta(data.delta);
-        scheduleAssistantRender();
+        view.appendAssistantDelta(data.delta);
       }
     } else if (event.type === "response.completed" && matchesActiveResponse(data)) {
-      if (state.activeAssistant && typeof data.content === "string") {
-        replaceAssistantContent(data.content);
+      if (typeof data.content === "string") {
+        view.replaceAssistantContent(data.content);
       }
       finishGeneration("");
-      announce("Response completed.");
+      view.announce("Response completed.");
     } else if (event.type === "response.cancelled" && matchesActiveResponse(data)) {
       finishGeneration("Generation stopped.");
-      announce("Response stopped.");
+      view.announce("Response stopped.");
     } else if (event.type === "error") {
       const message = typeof data.message === "string" ? data.message : "The request could not be completed.";
       const matchesPendingError = state.phase === "pending" && data.message_id === state.pendingMessageId;
@@ -321,9 +180,9 @@ import {markdownNodes} from "./markdown.js";
       if (matchesPendingError || matchesActiveError) {
         finishGeneration(message, true);
       } else {
-        appendMessage("system", message, {error: true});
+        view.appendMessage("system", message, {error: true});
       }
-      announce(`Error: ${message}`);
+      view.announce(`Error: ${message}`);
     }
   }
 
@@ -349,7 +208,7 @@ import {markdownNodes} from "./markdown.js";
         showLocalError("Received an unreadable server event.");
         return;
       }
-      appendTrace("RX", event);
+      view.appendTrace("RX", event);
       handleEvent(event);
     });
     socket.addEventListener("close", () => {
@@ -359,7 +218,7 @@ import {markdownNodes} from "./markdown.js";
       state.socket = null;
       if (state.phase !== "idle") {
         finishGeneration("Connection closed; the last message was not replayed.", true);
-        announce("Error: Connection closed; the last message was not replayed.");
+        view.announce("Error: Connection closed; the last message was not replayed.");
       } else {
         resetRequestState();
       }
@@ -381,7 +240,7 @@ import {markdownNodes} from "./markdown.js";
         return;
       }
       setStatus("Link error", "error");
-      announce("Error: WebSocket link error.");
+      view.announce("Error: WebSocket link error.");
     });
   }
 
@@ -390,7 +249,7 @@ import {markdownNodes} from "./markdown.js";
       showLocalError("Connection is not ready.");
       return false;
     }
-    appendTrace("TX", event);
+    view.appendTrace("TX", event);
     state.socket.send(serialized);
     return true;
   }
@@ -430,7 +289,7 @@ import {markdownNodes} from "./markdown.js";
     if (sendEvent(event, serialized)) {
       state.pendingMessageId = messageId;
       state.phase = "pending";
-      appendMessage("user", content);
+      view.appendMessage("user", content);
       elements.input.value = "";
       elements.count.textContent = `0 / ${state.maxMessageLength}`;
       updateControls();
@@ -461,27 +320,17 @@ import {markdownNodes} from "./markdown.js";
     state.reconnectAttempts = 0;
     resetRequestState();
     elements.conversationId.textContent = state.conversationId;
-    while (elements.timeline.firstChild) {
-      elements.timeline.removeChild(elements.timeline.firstChild);
-    }
-    while (elements.trace.firstChild) {
-      elements.trace.removeChild(elements.trace.firstChild);
-    }
+    view.clearDisplay();
     persistConversationId();
-    appendMessage("system", "New local session created.");
+    view.appendMessage("system", "New local session created.");
     connect();
   });
   elements.clearDisplay.addEventListener("click", () => {
     if (state.phase !== "idle") {
       return;
     }
-    while (elements.timeline.firstChild) {
-      elements.timeline.removeChild(elements.timeline.firstChild);
-    }
-    while (elements.trace.firstChild) {
-      elements.trace.removeChild(elements.trace.firstChild);
-    }
-    appendMessage("system", "Local display cleared; server conversation state is unchanged.");
+    view.clearDisplay();
+    view.appendMessage("system", "Local display cleared; server conversation state is unchanged.");
   });
   window.addEventListener("beforeunload", () => {
     state.intentionalClose = true;
@@ -493,7 +342,7 @@ import {markdownNodes} from "./markdown.js";
 
   elements.conversationId.textContent = state.conversationId;
   persistConversationId();
-  appendMessage("system", "Diagnostic channel initialized. Waiting for runtime readiness.");
+  view.appendMessage("system", "Diagnostic channel initialized. Waiting for runtime readiness.");
   updateControls();
   connect();
 })();

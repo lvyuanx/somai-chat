@@ -14,8 +14,11 @@
 ## 目录说明
 
 - `index.html`：三栏语义结构、表单与可访问性标记。
-- `app.css`：工业设备控制台视觉、消息状态、响应式布局和减少动效规则。
-- `app.js`：连接状态机、动态输入限额、流式渲染调度与页面交互。
+- `app.css`：工业设备控制台基础视觉、消息状态、组件样式和动效定义。
+- `responsive.css`：850px 移动运行台布局、动态视口高度兼容和减少动效覆盖。
+- `app.js`：会话存储、WebSocket 协议状态机、动态输入限额、composer 和会话操作组合。
+- `view.js`：通过注入的 DOM、window、elements 与 limits
+  管理有界消息/轨迹、live status 和 RAF 渲染。
 - `markdown.js`：只通过 DOM 文本 API 构建允许的安全 Markdown 子集。
 - `package.json`：把同目录 JavaScript 声明为原生 ES module，供浏览器与 Node 检查使用。
 - `__init__.py`：包标识，使静态资源随 Python 包分发。
@@ -62,4 +65,5 @@ Markdown 仅支持段落、一级至三级标题、列表、围栏代码、行�
 - 页面必须在模型配置缺失时仍能访问；只有 WebSocket 运行时会处于未就绪状态。
 - 资源路径由 Python 包位置解析，不能依赖服务启动时的当前工作目录。
 - 页面不加载外部字体、脚本、样式或 CDN 资源。
-- HTTP 响应通过应用中间件设置 CSP、`nosniff` 和未指纹页面/资源的 `no-cache`。
+- HTTP 响应通过应用中间件设置 CSP、`nosniff` 和未指纹页面/资源的 `no-cache`；
+  CSP 的 WebSocket 目标只允许经过字符与 URL 结构校验的当前 Host，不允许裸 `ws:`/`wss:` scheme。

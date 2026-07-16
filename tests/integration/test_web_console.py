@@ -39,6 +39,7 @@ def test_debug_console_has_accessible_local_structure() -> None:
         'id="event-trace"',
         '<script type="module" src="/assets/app.js"></script>',
         'href="/assets/app.css"',
+        'href="/assets/responsive.css"',
     )
     assert all(fragment in html for fragment in required_fragments)
     assert not re.search(r"\son[a-z]+\s*=", html, re.IGNORECASE)
@@ -52,15 +53,21 @@ def test_debug_console_has_accessible_local_structure() -> None:
 def test_debug_console_assets_are_served_with_expected_content_types() -> None:
     with TestClient(create_app()) as client:
         stylesheet = client.get("/assets/app.css")
+        responsive = client.get("/assets/responsive.css")
         script = client.get("/assets/app.js")
         markdown = client.get("/assets/markdown.js")
+        view = client.get("/assets/view.js")
 
     assert stylesheet.status_code == 200
     assert stylesheet.headers["content-type"].startswith("text/css")
+    assert responsive.status_code == 200
+    assert responsive.headers["content-type"].startswith("text/css")
     assert script.status_code == 200
     assert "javascript" in script.headers["content-type"]
     assert markdown.status_code == 200
     assert "javascript" in markdown.headers["content-type"]
+    assert view.status_code == 200
+    assert "javascript" in view.headers["content-type"]
 
 
 def test_console_responses_have_security_and_no_cache_headers() -> None:
@@ -69,27 +76,49 @@ def test_console_responses_have_security_and_no_cache_headers() -> None:
         "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
     )
     with TestClient(create_app()) as client:
-        responses = [client.get(path) for path in ("/", "/assets/app.css", "/assets/app.js", "/assets/markdown.js")]
+        paths = (
+            "/",
+            "/assets/app.css",
+            "/assets/responsive.css",
+            "/assets/app.js",
+            "/assets/markdown.js",
+            "/assets/view.js",
+        )
+        responses = [client.get(path) for path in paths]
 
     for response in responses:
-        assert response.headers["content-security-policy"] == expected_csp
+        csp = response.headers["content-security-policy"]
+        assert csp == expected_csp.replace("ws: wss:", "ws://testserver wss://testserver")
+        assert " ws: " not in csp and " wss: " not in csp
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["cache-control"] == "no-cache"
+
+    with TestClient(create_app()) as client:
+        poisoned = client.get("/", headers={"host": "evil.example;script-src *"})
+
+    poisoned_csp = poisoned.headers["content-security-policy"]
+    assert "evil.example" not in poisoned_csp
+    assert "script-src *" not in poisoned_csp
+    assert "\r" not in poisoned_csp and "\n" not in poisoned_csp
 
 
 def test_console_styles_cover_responsive_accessible_streaming_states() -> None:
     with TestClient(create_app()) as client:
         css = client.get("/assets/app.css").text
+        responsive = client.get("/assets/responsive.css").text
 
-    assert "@media (max-width: 850px)" in css
+    assert "@media" not in css
+    assert "@media (max-width: 850px)" in responsive
     assert ":focus-visible" in css
-    assert "prefers-reduced-motion: reduce" in css
+    assert "prefers-reduced-motion: reduce" in responsive
     assert ".streaming-cursor" in css
     assert "--signal-orange" in css
     assert "--success-green" in css
     assert ".visually-hidden" in css
-    mobile = css[css.index("@media (max-width: 850px)") :]
+    mobile = responsive[responsive.index("@media (max-width: 850px)") :]
     assert "grid-template-rows: auto minmax(0, 1fr)" in mobile
+    assert re.search(r"height:\s*100vh;\s*height:\s*100dvh", mobile)
+    assert "min-height: 0" in mobile
     assert ".session-rail" in mobile
     assert ".trace-rail" in mobile and "display: none" in mobile
     assert not re.search(r"\.side-rail\s*\{\s*display:\s*none", mobile)
@@ -99,6 +128,7 @@ def test_console_script_uses_safe_dom_and_websocket_state_machine() -> None:
     with TestClient(create_app()) as client:
         javascript = client.get("/assets/app.js").text
         markdown = client.get("/assets/markdown.js").text
+        view = client.get("/assets/view.js").text
 
     forbidden = ("innerHTML", "insertAdjacentHTML", "eval(", "new Function")
     required = (
@@ -115,10 +145,13 @@ def test_console_script_uses_safe_dom_and_websocket_state_machine() -> None:
         "createElement",
         "reconnect",
     )
-    assert not any(token in javascript or token in markdown for token in forbidden)
+    assert not any(token in javascript or token in markdown or token in view for token in forbidden)
     assert all(token in javascript for token in required)
-    assert 'import {markdownNodes} from "./markdown.js";' in javascript
+    assert 'import {markdownNodes} from "./markdown.js";' in view
     assert "export function markdownNodes" in markdown
+    assert re.search(r'import \{[^}]*createConsoleView[^}]*\} from "\./view\.js";', javascript)
+    assert "createConsoleView({" in javascript
+    assert "export function createConsoleView" in view
 
 
 def test_console_message_send_enters_pending_synchronously() -> None:
@@ -194,6 +227,19 @@ def test_console_node_dom_and_websocket_regressions() -> None:
     root = Path(__file__).parents[2]
     result = subprocess.run(
         ["node", "tests/js/web_console_state.mjs"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_console_view_node_boundaries() -> None:
+    root = Path(__file__).parents[2]
+    result = subprocess.run(
+        ["node", "tests/js/console_view.mjs"],
         cwd=root,
         check=False,
         capture_output=True,

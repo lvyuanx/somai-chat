@@ -2,9 +2,12 @@
 
 import inspect
 import logging
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from ipaddress import ip_address
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import uvicorn
 from fastapi import FastAPI
@@ -24,10 +27,40 @@ from somai_chat.providers.llm import create_chat_model
 
 logger = logging.getLogger(__name__)
 WEB_DIRECTORY = Path(__file__).with_name("web")
-CONTENT_SECURITY_POLICY = (
-    "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; "
-    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
-)
+_CSP_DOMAIN = re.compile(r"^[A-Za-z0-9.-]+$")
+
+
+def _websocket_authority(request: Request) -> str | None:
+    raw_host = request.headers.get("host", "")
+    if not raw_host or any(ord(character) < 33 or ord(character) > 126 for character in raw_host):
+        return None
+    try:
+        parsed = urlsplit(f"//{raw_host}")
+        port = parsed.port
+    except ValueError:
+        return None
+    host = parsed.hostname
+    if host is None or parsed.username is not None or parsed.password is not None:
+        return None
+    if parsed.path or parsed.query or parsed.fragment:
+        return None
+    if ":" in host:
+        try:
+            host = f"[{ip_address(host).compressed}]"
+        except ValueError:
+            return None
+    elif _CSP_DOMAIN.fullmatch(host) is None:
+        return None
+    return f"{host}:{port}" if port is not None else host
+
+
+def _content_security_policy(request: Request) -> str:
+    authority = _websocket_authority(request)
+    connect_sources = "'self'" if authority is None else f"'self' ws://{authority} wss://{authority}"
+    return (
+        "default-src 'self'; script-src 'self'; style-src 'self'; "
+        f"connect-src {connect_sources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    )
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -35,7 +68,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
-        response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+        response.headers["Content-Security-Policy"] = _content_security_policy(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         if request.url.path == "/" or request.url.path.startswith("/assets/"):
             response.headers["Cache-Control"] = "no-cache"
