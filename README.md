@@ -11,11 +11,11 @@ SOMAI Chat 是 SOMAI 具身智能系统的文本对话中枢 MVP。端侧负责�
         ⇅ WebSocket
 api（协议、Origin、帧限制、连接）
         ↓
-application（流式事件、并发、取消）
+application（流式事件、并发、取消；只调用中立错误分类 callback）
         ↓
 agent（SOMAI Prompt、LangGraph、内存 Checkpoint）
         ⇅
-providers（OpenAI 兼容 Chat Model）
+providers（OpenAI 兼容 Chat Model 与供应商异常分类）
 ```
 
 `core` 提供配置、错误与安全日志；`main.py` 装配应用；`web` 保存随 wheel 分发的静态调试台。SOMAI 的稳定身份是自然、沉稳、友好的 AI 助手：默认跟随用户语言，输出适合 TTS 的短句；没有接入感知或动作工具时，不声称已经观察或执行。

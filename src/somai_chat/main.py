@@ -23,7 +23,7 @@ from somai_chat.api.websocket import router as websocket_router
 from somai_chat.application.conversation import ConversationRuntime
 from somai_chat.core.config import Settings, get_settings
 from somai_chat.core.logging import configure_logging
-from somai_chat.providers.llm import create_chat_model
+from somai_chat.providers.llm import create_chat_model, is_model_provider_unavailable
 
 logger = logging.getLogger(__name__)
 WEB_DIRECTORY = Path(__file__).with_name("web")
@@ -101,7 +101,10 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
             if resolved_runtime is None:
                 model = create_chat_model(resolved_settings)
                 owned_resource = model
-                resolved_runtime = ConversationRuntime(build_conversation_graph(model))
+                resolved_runtime = ConversationRuntime(
+                    build_conversation_graph(model),
+                    model_unavailable_classifier=is_model_provider_unavailable,
+                )
             application.state.settings = resolved_settings
             application.state.runtime = resolved_runtime
             application.state.ready = True

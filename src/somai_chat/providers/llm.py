@@ -1,8 +1,15 @@
 """OpenAI-compatible chat model construction."""
 
+import httpx
+import openai
 from langchain_openai import ChatOpenAI
 
 from somai_chat.core.config import Settings
+
+
+def is_model_provider_unavailable(error: BaseException) -> bool:
+    """Classify failures owned by the OpenAI-compatible provider boundary."""
+    return isinstance(error, (openai.APIError, httpx.TransportError, httpx.TimeoutException))
 
 
 def create_chat_model(settings: Settings) -> ChatOpenAI:

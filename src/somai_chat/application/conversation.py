@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from typing import Protocol, cast
 from uuid import uuid4
 
-import httpx
-import openai
 from langchain_core.messages import AIMessageChunk, HumanMessage
 from langchain_core.messages.ai import UsageMetadata, add_usage
 from langchain_core.runnables import RunnableConfig
@@ -19,7 +17,13 @@ from somai_chat.api.protocol import ServerEvent
 from somai_chat.core.errors import ErrorCode, SomaiError
 
 SendEvent = Callable[[ServerEvent], Awaitable[None]]
+ModelUnavailableClassifier = Callable[[BaseException], bool]
 _LIFECYCLE_REENTRY_MESSAGE = "Conversation lifecycle cannot be changed from the send callback"
+
+
+def _never_model_unavailable(error: BaseException) -> bool:
+    del error
+    return False
 
 
 class _CloseableAsyncIterator[T](AsyncIterator[T], Protocol):
@@ -82,8 +86,13 @@ def _usage_data(usage: UsageMetadata | None) -> dict[str, JsonValue] | None:
 class ConversationRuntime:
     """Run a graph turn and expose transport-neutral server events."""
 
-    def __init__(self, graph: ConversationGraph) -> None:
+    def __init__(
+        self,
+        graph: ConversationGraph,
+        model_unavailable_classifier: ModelUnavailableClassifier = _never_model_unavailable,
+    ) -> None:
         self._graph = graph
+        self._model_unavailable_classifier = model_unavailable_classifier
 
     async def stream(
         self,
@@ -125,12 +134,16 @@ class ConversationRuntime:
                         usage = add_usage(usage, message.usage_metadata)
         except asyncio.CancelledError:
             raise
-        except (openai.APIError, httpx.TransportError, httpx.TimeoutException) as error:
-            raise SomaiError(
-                ErrorCode.MODEL_UNAVAILABLE,
-                "Model provider is unavailable",
-            ) from error
         except Exception as error:
+            try:
+                model_unavailable = self._model_unavailable_classifier(error)
+            except BaseException:
+                model_unavailable = False
+            if model_unavailable:
+                raise SomaiError(
+                    ErrorCode.MODEL_UNAVAILABLE,
+                    "Model provider is unavailable",
+                ) from error
             raise SomaiError(
                 ErrorCode.GENERATION_FAILED,
                 "Unable to generate a response",

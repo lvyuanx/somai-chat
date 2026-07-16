@@ -2,7 +2,9 @@
 
 ## 模块简介与职责
 
-`somai_chat` 是模块化单体的 Python 包。`main.py` 是唯一组合根：集中读取 `Settings`、配置 JSON 日志、创建模型、编译 LangGraph、创建 `ConversationRuntime`，并装配健康路由、版本化 WebSocket 与包内静态调试台。
+`somai_chat` 是模块化单体的 Python 包。`main.py` 是唯一组合根：集中读取 `Settings`、配置 JSON 日志、创建模型、
+编译 LangGraph，并把 Provider 的中立错误分类 callback 注入 `ConversationRuntime`，最后装配健康路由、版本化
+WebSocket 与包内静态调试台。
 
 ## 目录与公开入口
 
@@ -18,7 +20,9 @@
 
 lifespan 成功时将 Settings、Runtime 和 ready 状态注入 `app.state`；依赖创建失败时应用仍能提供静态页和 liveness，但 readiness 为 503，WebSocket 以未就绪策略关闭。应用拥有的模型资源在 shutdown 安全关闭，测试注入的 Runtime 不由组合根关闭。
 
-客户端文本依次经过 `api -> application -> agent -> providers`，模型消息块再反向转换为统一服务端信封。静态路径始终从包位置解析，不依赖当前工作目录。安全中间件为所有响应设置 CSP 和 `nosniff`，并让未指纹页面/资源不缓存。
+客户端文本依次经过 `api -> application -> agent -> providers`，模型消息块再反向转换为统一服务端信封。
+Application 不导入 Provider/OpenAI/httpx；组合根只注入 `Callable[[BaseException], bool]` 分类边界。
+静态路径始终从包位置解析，不依赖当前工作目录。安全中间件为所有响应设置 CSP 和 `nosniff`。
 
 ## 部署与注意事项
 

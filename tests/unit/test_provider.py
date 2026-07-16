@@ -1,9 +1,11 @@
+import httpx
+import openai
 import pytest
 from langchain_openai.chat_models import _client_utils
 from pydantic import SecretStr
 
 from somai_chat.core.config import Settings
-from somai_chat.providers.llm import create_chat_model
+from somai_chat.providers.llm import create_chat_model, is_model_provider_unavailable
 
 
 @pytest.fixture(autouse=True)
@@ -74,6 +76,26 @@ def test_custom_compatible_endpoint_does_not_request_stream_usage() -> None:
     )
 
     assert model.stream_usage is False
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        openai.APIConnectionError(
+            message="connection failed",
+            request=httpx.Request("POST", "https://provider.example/v1"),
+        ),
+        openai.APITimeoutError(request=httpx.Request("POST", "https://provider.example/v1")),
+        httpx.ConnectError("connection failed"),
+        httpx.ReadTimeout("timed out"),
+    ],
+)
+def test_model_provider_unavailable_classifier_recognizes_provider_errors(error: BaseException) -> None:
+    assert is_model_provider_unavailable(error) is True
+
+
+def test_model_provider_unavailable_classifier_rejects_unknown_errors() -> None:
+    assert is_model_provider_unavailable(RuntimeError("graph bug")) is False
 
 
 @pytest.mark.parametrize(

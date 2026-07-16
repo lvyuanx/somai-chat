@@ -4,8 +4,6 @@ import asyncio
 from collections.abc import AsyncIterator, Callable
 from typing import Any, cast
 
-import httpx
-import openai
 import pytest
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -164,17 +162,15 @@ async def test_runtime_maps_graph_failure_without_leaking_details() -> None:
 @pytest.mark.parametrize(
     "provider_error",
     [
-        openai.APIConnectionError(
-            message="https://provider.example?api_key=SECRET_RAW",
-            request=httpx.Request("POST", "https://provider.example/v1"),
-        ),
-        openai.APITimeoutError(request=httpx.Request("POST", "https://provider.example/v1")),
-        httpx.ConnectError("SECRET_RAW", request=httpx.Request("POST", "https://provider.example/v1")),
-        httpx.ReadTimeout("SECRET_RAW", request=httpx.Request("POST", "https://provider.example/v1")),
+        RuntimeError("https://provider.example?api_key=SECRET_RAW"),
+        ConnectionError("SECRET_RAW"),
     ],
 )
 async def test_runtime_classifies_provider_failures_safely(provider_error: Exception) -> None:
-    runtime = ConversationRuntime(cast(ConversationGraph, ProviderFailingGraph(provider_error)))
+    runtime = ConversationRuntime(
+        cast(ConversationGraph, ProviderFailingGraph(provider_error)),
+        model_unavailable_classifier=lambda error: error is provider_error,
+    )
 
     with pytest.raises(SomaiError) as captured:
         async for _ in runtime.stream("conv-1", "msg-1", "secret input", response_id="resp_fail"):
@@ -184,6 +180,27 @@ async def test_runtime_classifies_provider_failures_safely(provider_error: Excep
     assert captured.value.safe_message == "Model provider is unavailable"
     assert "SECRET_RAW" not in str(captured.value)
     assert "provider.example" not in str(captured.value)
+
+
+@pytest.mark.asyncio
+async def test_runtime_classifier_failure_falls_back_to_generation_failed() -> None:
+    provider_error = RuntimeError("SECRET_RAW")
+
+    def broken_classifier(error: BaseException) -> bool:
+        assert error is provider_error
+        raise RuntimeError("classifier-secret")
+
+    runtime = ConversationRuntime(
+        cast(ConversationGraph, ProviderFailingGraph(provider_error)),
+        model_unavailable_classifier=broken_classifier,
+    )
+
+    with pytest.raises(SomaiError) as captured:
+        async for _ in runtime.stream("conv-1", "msg-1", "secret input", response_id="resp_fail"):
+            pass
+
+    assert captured.value.code is ErrorCode.GENERATION_FAILED
+    assert captured.value.safe_message == "Unable to generate a response"
 
 
 @pytest.mark.asyncio

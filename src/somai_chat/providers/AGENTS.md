@@ -7,6 +7,7 @@
 ## 主要职责
 
 - 将集中式配置映射为 OpenAI 兼容的流式聊天模型。
+- 在 Provider 边界识别 OpenAI API 与 httpx 传输/超时异常。
 - 保持 API Key 为敏感类型，不在日志或对象表示中暴露明文。
 
 ## 目录说明
@@ -20,6 +21,7 @@
 它映射基础 URL、API Key、模型名、温度、最大输出、超时配置，不发起网络请求。
 官方 `api.openai.com` 端点启用流式 usage；自定义兼容端点不发送该选项，
 避免不支持 `stream_options` 的服务拒绝请求。
+`is_model_provider_unavailable(error)` 识别 `openai.APIError`、`httpx.TransportError` 与超时异常；未知错误返回 false。
 
 ## 依赖关系与数据流
 
@@ -32,7 +34,8 @@
 应提供相同的 LangChain 模型接口。
 不得直接读取环境变量，不得记录、转换为普通字符串或序列化 API Key，
 也不得在工厂中进行连通性请求。
-运行时产生的 OpenAI API、网络或超时异常由 Application 边界统一映射为安全 `MODEL_UNAVAILABLE`，
-不得把 URL、Key 或供应商原文带入事件或应用日志。
+本模块显式依赖 `openai>=2,<3` 与 `httpx>=0.28,<1`；分类函数由组合根注入 Application，后者不接触具体异常类型。
+运行时产生的 OpenAI API、网络或超时异常最终映射为安全 `MODEL_UNAVAILABLE`，不得把 URL、Key 或供应商原文
+带入事件或应用日志。
 模型工厂及其依赖随 wheel 安装；Docker runtime 只安装构建阶段产出的 wheel，不复制源码、测试、
 `.env` 或构建工具。就绪检查只确认工厂和 Graph 已装配，不产生外部请求或费用。

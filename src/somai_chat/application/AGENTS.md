@@ -24,8 +24,9 @@
 
 `ConversationRuntime.stream(...)` 把会话标识映射为
 LangGraph `thread_id`，过滤空的 AI 文本块，拼接最终文本并累加各流式块提供的 usage。
-供应商 `openai.APIError` 及 httpx 传输/超时异常映射为 `MODEL_UNAVAILABLE` 和固定安全消息；取消原样传播，
-普通编程、Graph 或未知异常映射为 `GENERATION_FAILED`，不得暴露原始错误。
+Runtime 只调用构造时注入的 provider-neutral `ModelUnavailableClassifier`；分类为 true 时映射为
+`MODEL_UNAVAILABLE` 和固定安全消息，默认 classifier 永远为 false。取消原样传播，普通编程、Graph、未知异常以及
+classifier 自身失败均安全回退为 `GENERATION_FAILED`。本模块不得导入 Provider、OpenAI 或 httpx。
 Runtime 和 Session 都显式关闭下层异步流，
 确保取消、关闭或发送失败返回时 Graph 锁已经释放。
 流清理遵循主异常优先：已有取消或发送失败时抑制 cleanup 异常；
@@ -49,7 +50,7 @@ close 已开始后到达的 cancel 返回 `CANCEL_NOT_FOUND`，不得取得 owne
 
 ## 依赖关系与数据流
 
-本模块依赖 Agent 的 `ConversationGraph`、API 的 `ServerEvent` 和 Core 的错误契约。
+本模块依赖 Agent 的 `ConversationGraph`、API 的 `ServerEvent` 和 Core 的错误契约；供应商分类能力仅以 callback 注入。
 API 层注入异步发送回调；用户输入进入 Graph，
 Graph 消息块转换为协议事件后经回调返回客户端。
 
