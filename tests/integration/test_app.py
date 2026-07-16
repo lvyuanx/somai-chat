@@ -250,6 +250,23 @@ def test_deeply_nested_json_maps_to_invalid_message_and_connection_recovers() ->
     assert pong["data"]["correlation_id"] == "after_depth"
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        '{"type":"ping","type":"message.create","data":{}}',
+        '{"type":"ping","data":{"correlation_id":"first","correlation_id":"second"}}',
+    ],
+    ids=["duplicate-top-level-type", "duplicate-nested-data-key"],
+)
+def test_duplicate_json_keys_are_invalid_and_connection_recovers(payload: str) -> None:
+    with app_client() as client, client.websocket_connect("/api/v1/chat/ws/conv_duplicate") as socket:
+        socket.receive_json()
+        socket.send_text(payload)
+        assert socket.receive_json()["data"]["code"] == "INVALID_MESSAGE"
+        socket.send_json({"type": "ping", "data": {"correlation_id": "after_duplicate"}})
+        assert socket.receive_json()["data"]["correlation_id"] == "after_duplicate"
+
+
 def test_busy_cancel_and_cancel_not_found_are_recoverable() -> None:
     runtime = BlockingRuntime()
     with app_client(runtime) as client, client.websocket_connect("/api/v1/chat/ws/conv_test") as socket:

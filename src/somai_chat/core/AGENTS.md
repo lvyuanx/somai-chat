@@ -11,7 +11,7 @@
 - 在应用启动前校验运行环境、模型连接参数和输入限制。
 - 以敏感类型保存 API Key，避免其出现在对象文本表示中。
 - 定义跨模块使用的稳定错误码和只包含安全公开信息的异常。
-- 使用标准库输出 JSON 日志，只允许稳定消息和关联标识进入结构化字段。
+- 只为 `somai_chat` namespace 输出 JSON 日志，并隔离可能含供应商动态内容的第三方 namespace。
 
 ## 目录说明
 
@@ -30,7 +30,7 @@
 
 - `get_settings()`：返回进程内缓存的 `Settings` 实例，供组合根注入其他模块。
 - `SomaiError(code, safe_message)`：创建可安全转换为字符串的应用错误。
-- `configure_logging(level)`：配置根 logger 输出逐行 JSON。
+- `configure_logging(level)`：幂等配置 `somai_chat` logger 输出逐行 JSON，不修改 root handler。
 - `JsonFormatter`：输出时间、级别、logger、固定消息及允许的关联字段。
 
 ## 主要流程
@@ -57,9 +57,10 @@
 必填项为 OpenAI 兼容 API Key 与模型名称，两者都会去除首尾空白并拒绝空值。
 服务监听地址/端口、基础 URL、生成参数、消息字符数、WebSocket 原始文本字节数
 及允许来源均在此集中定义。
-`max_websocket_message_bytes` 默认 32768，并必须为正数；生产 Uvicorn 也使用相同值限制帧大小。
+`max_websocket_message_bytes` 默认 32768，是应用解析前可恢复阈值；
+`websocket_transport_max_bytes` 默认 1048576，是 Uvicorn 紧急硬上限，必须为正且不小于应用阈值。
 `python -m somai_chat.main` 先解析同一份 Settings，再把 host、port、开发环境 reload 状态及
-`max_websocket_message_bytes` 传给 Uvicorn，避免服务层和应用层限制漂移。
+`websocket_transport_max_bytes` 传给 Uvicorn。
 允许来源只接受不含路径、查询、片段和用户信息的 HTTP/HTTPS Origin；主机转小写，
 默认 80/443 端口省略后再保存，localhost、IPv4 和 IPv6 均可使用。
 
@@ -78,5 +79,7 @@
 或供应商原始错误插入日志消息。
 结构化关联字段包括 `connection_id`、`conversation_id`、`message_id`、
 `response_id` 与 `error_code`，其他 extra 字段不会序列化。
+root 与 Uvicorn 保留自身运维 handler 且不经过 `JsonFormatter`；`langchain`、`langchain_openai`、`openai`、
+`httpx`、`httpcore` namespace 禁止传播，避免动态供应商诊断进入受信任流。
 容器和 wheel 不携带 `.env`；运行时必须显式注入必填模型字段。模型配置不可用时组合根降级为
 liveness/静态页可用、readiness 503，而不是在健康探针中请求供应商。

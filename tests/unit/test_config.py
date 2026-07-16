@@ -41,6 +41,17 @@ def test_settings_defaults_websocket_byte_limit() -> None:
     settings = Settings(openai_api_key="secret", openai_model="chat-model")
 
     assert settings.max_websocket_message_bytes == 32768
+    assert settings.websocket_transport_max_bytes == 1048576
+
+
+def test_settings_rejects_transport_limit_below_application_limit() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            openai_api_key="secret",
+            openai_model="chat-model",
+            max_websocket_message_bytes=1024,
+            websocket_transport_max_bytes=128,
+        )
 
 
 def test_settings_default_server_bind() -> None:
@@ -179,5 +190,6 @@ def test_example_environment_documents_websocket_size_limit() -> None:
     project_root = Path(__file__).resolve().parents[2]
 
     assert "SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES=32768" in (project_root / ".env.example").read_text()
+    assert "SOMAI_WEBSOCKET_TRANSPORT_MAX_BYTES=1048576" in (project_root / ".env.example").read_text()
     assert "SOMAI_HOST=0.0.0.0" in (project_root / ".env.example").read_text()
     assert "SOMAI_PORT=8000" in (project_root / ".env.example").read_text()

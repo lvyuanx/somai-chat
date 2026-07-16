@@ -4,7 +4,7 @@ from ipaddress import ip_address
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _HOST_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     model_timeout_seconds: float = Field(default=30, gt=0)
     max_message_length: int = Field(default=8000, gt=0)
     max_websocket_message_bytes: int = Field(default=32768, gt=0)
+    websocket_transport_max_bytes: int = Field(default=1048576, gt=0)
     allowed_origins: list[str] = Field(default_factory=lambda: ["http://localhost:8000", "http://127.0.0.1:8000"])
 
     @field_validator("openai_api_key", mode="before")
@@ -94,6 +95,12 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_allowed_origins(cls, values: list[str]) -> list[str]:
         return [normalize_origin(value) for value in values]
+
+    @model_validator(mode="after")
+    def validate_websocket_limits(self) -> "Settings":
+        if self.websocket_transport_max_bytes < self.max_websocket_message_bytes:
+            raise ValueError("WebSocket transport limit must be at least the application limit")
+        return self
 
 
 @lru_cache

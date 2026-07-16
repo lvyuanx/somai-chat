@@ -3,7 +3,10 @@
 import json
 import logging
 from datetime import UTC, datetime
-from typing import ClassVar
+from typing import ClassVar, TextIO
+
+_APPLICATION_LOGGER = "somai_chat"
+_UNTRUSTED_LOGGERS = ("langchain", "langchain_openai", "openai", "httpx", "httpcore")
 
 
 class JsonFormatter(logging.Formatter):
@@ -31,11 +34,16 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
-def configure_logging(level: str = "INFO") -> None:
-    """Install the process JSON handler with the requested level."""
+def configure_logging(level: str = "INFO", *, stream: TextIO | None = None) -> None:
+    """Install an isolated JSON handler for trusted application records."""
 
-    handler = logging.StreamHandler()
+    handler = logging.StreamHandler(stream)
     handler.setFormatter(JsonFormatter())
-    root = logging.getLogger()
-    root.handlers = [handler]
-    root.setLevel(level)
+    application = logging.getLogger(_APPLICATION_LOGGER)
+    application.handlers = [handler]
+    application.setLevel(level)
+    application.propagate = False
+    for name in _UNTRUSTED_LOGGERS:
+        logger = logging.getLogger(name)
+        logger.handlers = [logging.NullHandler()]
+        logger.propagate = False

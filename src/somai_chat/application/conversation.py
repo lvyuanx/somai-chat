@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Protocol, cast
 from uuid import uuid4
 
+import httpx
+import openai
 from langchain_core.messages import AIMessageChunk, HumanMessage
 from langchain_core.messages.ai import UsageMetadata, add_usage
 from langchain_core.runnables import RunnableConfig
@@ -123,6 +125,11 @@ class ConversationRuntime:
                         usage = add_usage(usage, message.usage_metadata)
         except asyncio.CancelledError:
             raise
+        except (openai.APIError, httpx.TransportError, httpx.TimeoutException) as error:
+            raise SomaiError(
+                ErrorCode.MODEL_UNAVAILABLE,
+                "Model provider is unavailable",
+            ) from error
         except Exception as error:
             raise SomaiError(
                 ErrorCode.GENERATION_FAILED,

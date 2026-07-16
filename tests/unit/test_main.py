@@ -16,7 +16,8 @@ def test_run_loads_dotenv_and_passes_server_settings_to_uvicorn(
         "SOMAI_OPENAI_MODEL=test-model\n"
         "SOMAI_HOST=127.0.0.1\n"
         "SOMAI_PORT=9123\n"
-        "SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES=23456\n",
+        "SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES=23456\n"
+        "SOMAI_WEBSOCKET_TRANSPORT_MAX_BYTES=34567\n",
         encoding="utf-8",
     )
     for name in (
@@ -26,6 +27,7 @@ def test_run_loads_dotenv_and_passes_server_settings_to_uvicorn(
         "SOMAI_HOST",
         "SOMAI_PORT",
         "SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES",
+        "SOMAI_WEBSOCKET_TRANSPORT_MAX_BYTES",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.chdir(tmp_path)
@@ -47,5 +49,5 @@ def test_run_loads_dotenv_and_passes_server_settings_to_uvicorn(
         "host": "127.0.0.1",
         "port": 9123,
         "reload": False,
-        "ws_max_size": 23456,
+        "ws_max_size": 34567,
     }

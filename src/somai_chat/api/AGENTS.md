@@ -51,11 +51,11 @@ WebSocket 先完成握手，再校验 `conversation_id`、运行时就绪状态�
 设备客户端未发送 Origin 时允许连接；浏览器 Origin 必须精确匹配 `Settings.allowed_origins`。
 Origin 先按 Core 的标准规则规范化，畸形值按策略关闭。
 校验通过后先发送 `conversation.ready`，其中包含会话 ID、非敏感模型名称、消息 code point 上限和
-WebSocket 原始帧字节上限；随后创建的单连接 Session 在后台生成，
+WebSocket 应用可恢复字节上限（不下发传输紧急硬上限）；随后创建的单连接 Session 在后台生成，
 接收循环继续处理取消和 ping。
 每个连接用异步锁串行化所有 `send_json`，避免后台生成与接收循环交错写入同一帧。
 接收循环显式区分断开、文本和二进制帧；二进制、超出原始 UTF-8 字节限制、
-非法或递归过深的 JSON、未知事件、忙碌和取消目标不存在
+非法、任意层对象 key 重复或递归过深的 JSON、未知事件、忙碌和取消目标不存在
 都发送一个安全 `error` 信封且保持连接。
 断开或传输失败后在 `finally` 等待 Session 关闭，取消生成并禁止后续发送。
 

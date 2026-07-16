@@ -32,5 +32,7 @@
 应提供相同的 LangChain 模型接口。
 不得直接读取环境变量，不得记录、转换为普通字符串或序列化 API Key，
 也不得在工厂中进行连通性请求。
+运行时产生的 OpenAI API、网络或超时异常由 Application 边界统一映射为安全 `MODEL_UNAVAILABLE`，
+不得把 URL、Key 或供应商原文带入事件或应用日志。
 模型工厂及其依赖随 wheel 安装；Docker runtime 只安装构建阶段产出的 wheel，不复制源码、测试、
 `.env` 或构建工具。就绪检查只确认工厂和 Graph 已装配，不产生外部请求或费用。

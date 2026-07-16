@@ -148,7 +148,7 @@ def run() -> None:
         host=settings.host,
         port=settings.port,
         reload=settings.environment == "development",
-        ws_max_size=settings.max_websocket_message_bytes,
+        ws_max_size=settings.websocket_transport_max_bytes,
     )
 
 

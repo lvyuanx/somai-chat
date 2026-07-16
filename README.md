@@ -30,7 +30,8 @@ make install
 make dev
 ```
 
-打开 `http://localhost:8000/`。`make dev` 使用 `python -m somai_chat.main`，因此监听地址、端口、development reload 和 WebSocket 帧上限均来自 Settings。
+打开 `http://localhost:8000/`。`make dev` 使用 `python -m somai_chat.main`，因此监听地址、端口、development reload
+和 WebSocket 传输硬上限均来自 Settings。
 
 ## 配置
 
@@ -49,7 +50,8 @@ make dev
 | `SOMAI_MODEL_MAX_TOKENS` | `800` | 最大输出 token 数 |
 | `SOMAI_MODEL_TIMEOUT_SECONDS` | `30` | 单次模型请求超时秒数 |
 | `SOMAI_MAX_MESSAGE_LENGTH` | `8000` | 用户消息 Unicode code point 上限 |
-| `SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES` | `32768` | 原始 WebSocket 文本帧 UTF-8 字节上限，也传给 Uvicorn |
+| `SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES` | `32768` | 应用解析前文本 UTF-8 字节上限；超限返回 `INVALID_MESSAGE`，连接继续 |
+| `SOMAI_WEBSOCKET_TRANSPORT_MAX_BYTES` | `1048576` | Uvicorn 紧急帧硬上限；不得小于应用上限，超限以 1009 关闭 |
 | `SOMAI_ALLOWED_ORIGINS` | localhost 两项 | JSON 数组；浏览器 Origin 必须精确匹配，非浏览器设备可不发送 Origin |
 
 ## HTTP 与 WebSocket
@@ -83,7 +85,12 @@ make dev
 {"type":"pong","event_id":"evt_...","timestamp":"2026-07-16T10:24:19Z","data":{"correlation_id":"probe_1"}}
 ```
 
-终止事件到达前不要发送下一条消息。同一连接重复生成返回 `GENERATION_IN_PROGRESS` 且连接保持可用。错误信封的 `data` 包含稳定 `code` 和安全 `message`，可能附带关联 ID：`INVALID_MESSAGE`、`GENERATION_IN_PROGRESS`、`CANCEL_NOT_FOUND`、`MODEL_UNAVAILABLE`、`GENERATION_FAILED`。取消只接受当前 `response_id`；已完成或不匹配时返回 `CANCEL_NOT_FOUND`。客户端可随时发送 `ping`，无需等待生成结束。
+终止事件到达前不要发送下一条消息。同一连接重复生成返回 `GENERATION_IN_PROGRESS` 且连接保持可用。错误信封的
+`data` 包含稳定 `code` 和安全 `message`，可能附带关联 ID：`INVALID_MESSAGE`、
+`GENERATION_IN_PROGRESS`、`CANCEL_NOT_FOUND`、`MODEL_UNAVAILABLE`、`GENERATION_FAILED`。
+供应商 API 或网络/超时错误统一返回 `MODEL_UNAVAILABLE` 和固定安全消息；未知内部错误返回
+`GENERATION_FAILED`，两者均不包含 URL、Key 或供应商原文。取消只接受当前 `response_id`；已完成或不匹配时返回
+`CANCEL_NOT_FOUND`。客户端可随时发送 `ping`，无需等待生成结束。
 
 ## 开发与验证
 
@@ -125,7 +132,9 @@ docker run --rm --env-file .env -e SOMAI_ENVIRONMENT=production -e SOMAI_PORT=90
 
 MVP 的 Checkpointer、会话锁和生成状态都在单进程内存中：重启即丢失，不能直接增加 Uvicorn worker、容器副本或多实例。扩容前必须替换为持久化/共享 Checkpointer 与分布式会话锁。
 
-日志仅记录固定消息、关联 ID 和稳定错误码，不记录 API Key、完整用户消息、完整模型回复或供应商原始错误。浏览器 Origin 会规范化后精确校验；文本同时受 code point 与原始 UTF-8 帧字节上限约束；页面响应设置 CSP、`frame-ancestors 'none'`、`nosniff` 与 `no-cache`。
+应用日志仅由 `somai_chat` namespace 输出 JSON，并记录固定消息、关联 ID 和稳定错误码；root/Uvicorn 运维日志不经
+应用 JSON formatter，LangChain/OpenAI/httpx/httpcore 动态日志被隔离。任何日志都不得记录 API Key、完整用户消息、
+完整模型回复或供应商原始错误。文本同时受 code point、应用可恢复 UTF-8 字节上限与更大的传输硬上限约束。
 
 未来扩展点：向 `build_conversation_graph` 注入持久 Checkpointer；在 Agent Graph 增加明确的工具/动作节点和运行时能力清单；端侧通过当前文本 WebSocket 前后接入 ASR/TTS。新增事件应保持统一信封和既有终态语义。
 
@@ -133,7 +142,8 @@ MVP 的 Checkpointer、会话锁和生成状态都在单进程内存中：重启
 
 - `/health/live` 可用但 `/health/ready` 为 503：检查必填模型配置与启动日志；ready 不会替你验证外部模型。
 - WebSocket 立即以 1008 关闭：检查会话 ID、浏览器 Origin 和 `SOMAI_ALLOWED_ORIGINS`。
-- 收到 `INVALID_MESSAGE`：检查严格 JSON、事件类型、未知字段、ID 字符集、字符数和 UTF-8 帧大小。
-- 收到 `GENERATION_FAILED`：检查兼容端点、模型名、Key、超时和供应商日志；对外事件不会包含供应商原文。
+- 收到 `INVALID_MESSAGE`：检查严格 JSON（包括任意层重复 key）、事件类型、未知字段、ID、字符数和应用帧上限。
+- 收到 `MODEL_UNAVAILABLE`：检查兼容端点、模型名、Key、网络和超时；对外事件不会包含供应商原文。
+- 收到 `GENERATION_FAILED`：服务端遇到未分类内部生成错误；检查受信任应用日志。
 - 浏览器无法连接：确认页面与服务端 host/port、HTTP/HTTPS 对应的 `ws`/`wss` 以及反向代理 Upgrade 配置。
 - 重启后对话消失或多 worker 上下文不一致：这是进程内 MVP 的已知边界，不是持久会话实现。

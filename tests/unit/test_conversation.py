@@ -4,6 +4,8 @@ import asyncio
 from collections.abc import AsyncIterator, Callable
 from typing import Any, cast
 
+import httpx
+import openai
 import pytest
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -64,6 +66,16 @@ class FailingGraph:
     async def astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[tuple[AIMessageChunk, dict[str, Any]]]:
         del args, kwargs
         raise RuntimeError("provider-secret-detail")
+        yield AIMessageChunk(content="unreachable"), {}
+
+
+class ProviderFailingGraph:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    async def astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[tuple[AIMessageChunk, dict[str, Any]]]:
+        del args, kwargs
+        raise self.error
         yield AIMessageChunk(content="unreachable"), {}
 
 
@@ -146,6 +158,32 @@ async def test_runtime_maps_graph_failure_without_leaking_details() -> None:
     assert captured.value.code is ErrorCode.GENERATION_FAILED
     assert captured.value.safe_message == "Unable to generate a response"
     assert "provider-secret-detail" not in str(captured.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "provider_error",
+    [
+        openai.APIConnectionError(
+            message="https://provider.example?api_key=SECRET_RAW",
+            request=httpx.Request("POST", "https://provider.example/v1"),
+        ),
+        openai.APITimeoutError(request=httpx.Request("POST", "https://provider.example/v1")),
+        httpx.ConnectError("SECRET_RAW", request=httpx.Request("POST", "https://provider.example/v1")),
+        httpx.ReadTimeout("SECRET_RAW", request=httpx.Request("POST", "https://provider.example/v1")),
+    ],
+)
+async def test_runtime_classifies_provider_failures_safely(provider_error: Exception) -> None:
+    runtime = ConversationRuntime(cast(ConversationGraph, ProviderFailingGraph(provider_error)))
+
+    with pytest.raises(SomaiError) as captured:
+        async for _ in runtime.stream("conv-1", "msg-1", "secret input", response_id="resp_fail"):
+            pass
+
+    assert captured.value.code is ErrorCode.MODEL_UNAVAILABLE
+    assert captured.value.safe_message == "Model provider is unavailable"
+    assert "SECRET_RAW" not in str(captured.value)
+    assert "provider.example" not in str(captured.value)
 
 
 @pytest.mark.asyncio
@@ -259,6 +297,24 @@ async def test_runtime_failure_sends_one_safe_error_and_returns_idle() -> None:
     assert errors[0].data == {
         "code": "GENERATION_FAILED",
         "message": "Unable to generate a response",
+        "response_id": response_id,
+        "message_id": "msg-1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_model_unavailable_session_event_is_safe() -> None:
+    gate = asyncio.Event()
+    failure = SomaiError(ErrorCode.MODEL_UNAVAILABLE, "Model provider is unavailable")
+    recorder = EventRecorder()
+    session = ConversationSession("conv-1", StubRuntime(controlled_events(gate, fail=failure)), recorder)
+    response_id = session.start("msg-1", "secret input")
+    gate.set()
+    await wait_until_idle(session)
+
+    assert recorder.events[-1].data == {
+        "code": "MODEL_UNAVAILABLE",
+        "message": "Model provider is unavailable",
         "response_id": response_id,
         "message_id": "msg-1",
     }

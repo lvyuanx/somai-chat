@@ -39,7 +39,7 @@ def wait_until_live(process: subprocess.Popen[str], port: int) -> None:
 
 
 @contextmanager
-def uvicorn_server(*, ready: bool) -> Iterator[int]:
+def uvicorn_server(*, ready: bool, app_limit: int = 32768, transport_limit: int = 32768) -> Iterator[int]:
     port = unused_port()
     environment = os.environ.copy()
     for name in list(environment):
@@ -50,6 +50,7 @@ def uvicorn_server(*, ready: bool) -> Iterator[int]:
             SOMAI_OPENAI_API_KEY="test-secret",
             SOMAI_OPENAI_MODEL="test-model",
             SOMAI_ALLOWED_ORIGINS='["https://allowed.example"]',
+            SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES=str(app_limit),
         )
     else:
         environment.update(SOMAI_OPENAI_API_KEY="", SOMAI_OPENAI_MODEL="")
@@ -64,7 +65,7 @@ def uvicorn_server(*, ready: bool) -> Iterator[int]:
             "--port",
             str(port),
             "--ws-max-size",
-            "32768",
+            str(transport_limit),
         ],
         cwd=PROJECT_ROOT,
         env=environment,
@@ -110,3 +111,19 @@ def test_real_server_invalid_origin_closes_with_1008_after_handshake() -> None:
 def test_real_server_not_ready_closes_with_1013_after_handshake() -> None:
     with uvicorn_server(ready=False) as port:
         assert_server_close_code(port, "/api/v1/chat/ws/conv_unavailable", 1013)
+
+
+def test_real_server_separates_recoverable_application_limit_from_transport_limit() -> None:
+    oversized_application_payload = '{"type":"ping","data":{"correlation_id":"' + "x" * 150 + '"}}'
+    with uvicorn_server(ready=True, app_limit=128, transport_limit=1024) as port:
+        with connect(f"ws://127.0.0.1:{port}/api/v1/chat/ws/conv_limits") as websocket:
+            websocket.recv()
+            websocket.send(oversized_application_payload)
+            assert '"code":"INVALID_MESSAGE"' in websocket.recv()
+            websocket.send('{"type":"ping","data":{"correlation_id":"after_limit"}}')
+            assert '"correlation_id":"after_limit"' in websocket.recv()
+            websocket.send("x" * 1025)
+            with pytest.raises(ConnectionClosedError) as captured:
+                websocket.recv()
+        assert captured.value.rcvd is not None
+        assert captured.value.rcvd.code == 1009

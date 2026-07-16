@@ -20,14 +20,15 @@
 ## 会话与部署
 
 MVP 使用进程内 Checkpointer 和会话并发控制，仅支持单进程部署。引入共享状态基础设施前，不得直接进行多进程或多实例横向扩容。
-服务重启会丢失全部对话状态。生产容器必须以非 root 用户运行，并通过 `python -m somai_chat.main` 启动，确保监听配置和 WebSocket 帧上限来自同一 Settings。
+服务重启会丢失全部对话状态。生产容器必须以非 root 用户运行，并通过 `python -m somai_chat.main` 启动，确保监听配置和 WebSocket 传输硬上限来自同一 Settings。
 
 ## API 与日志契约
 
 - 健康检查为 `/health/live` 与 `/health/ready`；就绪探针不得调用外部模型。
 - 对话地址为 `/api/v1/chat/ws/{conversation_id}`，事件使用 `type/event_id/timestamp/data` 统一信封。
 - 浏览器 Origin 必须匹配集中配置；设备客户端可以不发送 Origin；文本同时受字符数和 UTF-8 帧字节限制。
-- 日志只允许固定消息、connection/conversation/message/response ID 与稳定错误码，不记录正文、回复、密钥或供应商原始错误。
+- 应用 JSON 日志仅接收 `somai_chat` namespace 的固定消息、关联 ID 与稳定错误码；隔离供应商动态日志，
+  不替换 root/Uvicorn 运维 handler，不记录正文、回复、密钥、URL 或供应商原始错误。
 
 ## 开发流程
 
@@ -37,7 +38,7 @@ MVP 使用进程内 Checkpointer 和会话并发控制，仅支持单进程部�
 
 - `make install`：执行 `uv sync --locked --extra dev`，严格按 `uv.lock` 创建开发环境并 editable 安装项目。
 - `make dev`：通过 `python -m somai_chat.main` 启动本地开发服务；监听地址、端口、reload 模式与
-  WebSocket 帧上限均来自同一个 `Settings` 实例。
+  WebSocket 传输硬上限均来自同一个 `Settings` 实例。
 - `make format`：格式化代码。
 - `make lint`：运行 Ruff 静态检查。
 - `make typecheck`：运行严格 mypy 检查。

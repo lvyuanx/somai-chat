@@ -37,6 +37,15 @@ def _invalid_message() -> SomaiError:
     return SomaiError(ErrorCode.INVALID_MESSAGE, "Invalid client event")
 
 
+def _object_without_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate JSON object key")
+        result[key] = value
+    return result
+
+
 async def _receive_text(websocket: WebSocket, max_bytes: int) -> str:
     message = await websocket.receive()
     if message["type"] == "websocket.disconnect":
@@ -120,7 +129,7 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
             try:
                 text = await _receive_text(websocket, settings.max_websocket_message_bytes)
                 try:
-                    payload = json.loads(text)
+                    payload = json.loads(text, object_pairs_hook=_object_without_duplicate_keys)
                 except json.JSONDecodeError:
                     raise _invalid_message() from None
                 except (ValueError, UnicodeEncodeError, RecursionError):
