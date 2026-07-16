@@ -1,10 +1,10 @@
 """Translate graph streams into protocol events and control one connection."""
 
 import asyncio
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping
-from contextlib import aclosing
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import cast
+from typing import Protocol, cast
 from uuid import uuid4
 
 from langchain_core.messages import AIMessageChunk, HumanMessage
@@ -17,6 +17,31 @@ from somai_chat.api.protocol import ServerEvent
 from somai_chat.core.errors import ErrorCode, SomaiError
 
 SendEvent = Callable[[ServerEvent], Awaitable[None]]
+_LIFECYCLE_REENTRY_MESSAGE = "Conversation lifecycle cannot be changed from the send callback"
+
+
+class _CloseableAsyncIterator[T](AsyncIterator[T], Protocol):
+    async def aclose(self) -> None: ...
+
+
+@asynccontextmanager
+async def _managed_stream[T](stream: _CloseableAsyncIterator[T]) -> AsyncIterator[_CloseableAsyncIterator[T]]:
+    primary_error: BaseException | None = None
+    try:
+        yield stream
+    except BaseException as error:
+        primary_error = error
+        raise
+    finally:
+        try:
+            await stream.aclose()
+        except BaseException:
+            if primary_error is None:
+                raise
+
+
+class _SendFailed(Exception):
+    """Stop a connection pump without attempting another send."""
 
 
 def _chunk_text(chunk: AIMessageChunk) -> str:
@@ -65,14 +90,14 @@ class ConversationRuntime:
         config: RunnableConfig = {"configurable": {"thread_id": conversation_id}}
         try:
             graph_stream = cast(
-                AsyncGenerator[tuple[object, dict[str, object]], None],
+                _CloseableAsyncIterator[tuple[object, dict[str, object]]],
                 self._graph.astream(
                     {"messages": [HumanMessage(content=content)]},
                     config=config,
                     stream_mode="messages",
                 ),
             )
-            async with aclosing(graph_stream):
+            async with _managed_stream(graph_stream):
                 async for message, _metadata in graph_stream:
                     if not isinstance(message, AIMessageChunk):
                         continue
@@ -145,8 +170,16 @@ class ConversationSession:
         generation.task = asyncio.create_task(self._pump(generation, content))
         return response_id
 
+    @staticmethod
+    def _reject_lifecycle_reentry(generation: _Generation) -> None:
+        current_task = asyncio.current_task()
+        if current_task is generation.task or current_task is generation.cancellation_owner:
+            raise RuntimeError(_LIFECYCLE_REENTRY_MESSAGE)
+
     async def cancel(self, response_id: str) -> None:
         generation = self._active
+        if generation is not None:
+            self._reject_lifecycle_reentry(generation)
         if (
             generation is None
             or generation.response_id != response_id
@@ -193,8 +226,10 @@ class ConversationSession:
                 self._active = None
 
     async def close(self) -> None:
-        self._closed = True
         generation = self._active
+        if generation is not None:
+            self._reject_lifecycle_reentry(generation)
+        self._closed = True
         if generation is None or generation.task is None:
             return
         current_task = asyncio.current_task()
@@ -211,10 +246,9 @@ class ConversationSession:
                 self._active = None
 
     async def _pump(self, generation: _Generation, content: str) -> None:
-        send_failed = False
         try:
             runtime_stream = cast(
-                AsyncGenerator[ServerEvent, None],
+                _CloseableAsyncIterator[ServerEvent],
                 self._runtime.stream(
                     self._conversation_id,
                     generation.message_id,
@@ -222,7 +256,7 @@ class ConversationSession:
                     response_id=generation.response_id,
                 ),
             )
-            async with aclosing(runtime_stream):
+            async with _managed_stream(runtime_stream):
                 async for event in runtime_stream:
                     if self._closed:
                         return
@@ -230,20 +264,21 @@ class ConversationSession:
                         generation.terminal_claimed = True
                     try:
                         await self._send(event)
-                    except Exception:
-                        send_failed = True
-                        return
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as error:
+                        raise _SendFailed from error
         except asyncio.CancelledError:
             raise
+        except _SendFailed:
+            return
         except SomaiError as error:
-            if not send_failed:
-                await self._send_error(generation, error)
+            await self._send_error(generation, error)
         except Exception:
-            if not send_failed:
-                await self._send_error(
-                    generation,
-                    SomaiError(ErrorCode.GENERATION_FAILED, "Unable to generate a response"),
-                )
+            await self._send_error(
+                generation,
+                SomaiError(ErrorCode.GENERATION_FAILED, "Unable to generate a response"),
+            )
         finally:
             if self._active is generation and generation.cancellation_owner is None:
                 self._active = None

@@ -26,6 +26,8 @@
 LangGraph `thread_id`，过滤空的 AI 文本块，拼接最终文本并累加各流式块提供的 usage。
 Runtime 和 Session 都显式关闭下层异步流，
 确保取消、关闭或发送失败返回时 Graph 锁已经释放。
+流清理遵循主异常优先：已有取消或发送失败时抑制 cleanup 异常；
+没有主异常时，cleanup 错误进入统一安全错误映射。
 
 `ConversationSession.start()` 同步返回本轮 `response_id` 并在后台泵送事件；
 活跃时再次调用会返回稳定忙碌错误。
@@ -37,6 +39,8 @@ cancelled 确认发送由当前 generation 的取消任务持有；
 发送完成或失败前 Session 保持忙碌。
 `close()` 会取消并等待该任务，返回后不会再发送 cancelled；
 关闭后的 Session 拒绝新一轮生成。
+异步发送回调不得调用当前 Session 的 `cancel()` 或 `close()`；
+这种生命周期重入会在修改状态前抛出固定的内部 `RuntimeError`，避免任务自取消或自等待。
 
 ## 依赖关系与数据流
 
