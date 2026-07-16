@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 import pytest
-from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -40,6 +40,31 @@ class RecordingChatModel(BaseChatModel):
         latest_user_message = next(message for message in reversed(messages) if isinstance(message, HumanMessage))
         reply = AIMessage(content=f"回复：{latest_user_message.content}")
         return ChatResult(generations=[ChatGeneration(message=reply)])
+
+
+class ConcurrencyTrackingChatModel(RecordingChatModel):
+    _active_calls: int = PrivateAttr(default=0)
+    _max_active_calls: int = PrivateAttr(default=0)
+
+    @property
+    def max_active_calls(self) -> int:
+        return self._max_active_calls
+
+    async def _agenerate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del stop, run_manager, kwargs
+        self._active_calls += 1
+        self._max_active_calls = max(self._max_active_calls, self._active_calls)
+        try:
+            await asyncio.sleep(0.03)
+            return self._generate(messages)
+        finally:
+            self._active_calls -= 1
 
 
 def graph_config(thread_id: str) -> RunnableConfig:
@@ -116,13 +141,13 @@ async def test_uses_default_and_injected_checkpointers() -> None:
     injected_graph = build_conversation_graph(RecordingChatModel(), checkpointer=injected_checkpointer)
 
     await default_graph.ainvoke(user_input("默认"), config=graph_config("default-thread"))
+    await injected_graph.ainvoke(user_input("注入"), config=graph_config("injected-thread"))
 
-    assert isinstance(default_graph.checkpointer, InMemorySaver)
-    assert injected_graph.checkpointer is injected_checkpointer
+    assert len([checkpoint async for checkpoint in injected_checkpointer.alist(None)]) > 0
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("config", [None, graph_config("")])
+@pytest.mark.parametrize("config", [None, {}, {"configurable": {}}, graph_config(""), graph_config("   ")])
 async def test_rejects_missing_or_empty_thread_id(config: RunnableConfig | None) -> None:
     graph = build_conversation_graph(RecordingChatModel())
 
@@ -131,8 +156,47 @@ async def test_rejects_missing_or_empty_thread_id(config: RunnableConfig | None)
 
 
 @pytest.mark.asyncio
+async def test_invalid_thread_id_does_not_create_a_checkpoint() -> None:
+    checkpointer = InMemorySaver()
+    graph = build_conversation_graph(RecordingChatModel(), checkpointer=checkpointer)
+    invalid_config = graph_config("   ")
+
+    with pytest.raises(ValueError, match="thread_id"):
+        await graph.ainvoke(user_input("不应保存"), config=invalid_config)
+    with pytest.raises(ValueError, match="thread_id"):
+        async for _ in graph.astream(user_input("不应保存"), config=invalid_config):
+            pass
+    with pytest.raises(ValueError, match="thread_id"):
+        await graph.aget_state(invalid_config)
+
+    assert [checkpoint async for checkpoint in checkpointer.alist(None)] == []
+
+
+@pytest.mark.asyncio
+async def test_same_thread_concurrent_invocations_are_serialized_without_lost_messages() -> None:
+    model = ConcurrencyTrackingChatModel()
+    graph = build_conversation_graph(model)
+    config = graph_config("conversation-a")
+
+    results = await asyncio.gather(
+        graph.ainvoke(user_input("A消息"), config=config),
+        graph.ainvoke(user_input("B消息"), config=config),
+    )
+
+    state = await graph.aget_state(config)
+    contents = [message.content for message in state.values["messages"]]
+    assert model.max_active_calls == 1
+    assert sorted(tuple(contents[index : index + 2]) for index in range(0, len(contents), 2)) == [
+        ("A消息", "回复：A消息"),
+        ("B消息", "回复：B消息"),
+    ]
+    assert [result["messages"][-1].content for result in results] == ["回复：A消息", "回复：B消息"]
+
+
+@pytest.mark.asyncio
 async def test_concurrent_threads_do_not_mix_history() -> None:
-    graph = build_conversation_graph(RecordingChatModel())
+    model = ConcurrencyTrackingChatModel()
+    graph = build_conversation_graph(model)
 
     await asyncio.gather(
         graph.ainvoke(user_input("A消息"), config=graph_config("conversation-a")),
@@ -145,3 +209,4 @@ async def test_concurrent_threads_do_not_mix_history() -> None:
     )
     assert [message.content for message in state_a.values["messages"]] == ["A消息", "回复：A消息"]
     assert [message.content for message in state_b.values["messages"]] == ["B消息", "回复：B消息"]
+    assert model.max_active_calls > 1
