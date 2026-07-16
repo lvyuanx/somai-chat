@@ -216,6 +216,32 @@ class CleanupFailingGraph:
         return CleanupFailingGraphStream()
 
 
+class GatedCleanupRuntime:
+    def __init__(self) -> None:
+        self.cleanup_entered = asyncio.Event()
+        self.release_cleanup = asyncio.Event()
+        self.cleanup_done = asyncio.Event()
+        self.pump_task: asyncio.Task[None] | None = None
+
+    async def stream(
+        self,
+        conversation_id: str,
+        message_id: str,
+        content: str,
+        *,
+        response_id: str,
+    ) -> AsyncIterator[ServerEvent]:
+        del conversation_id, content
+        self.pump_task = asyncio.current_task()
+        try:
+            yield ServerEvent.create("response.started", {"response_id": response_id, "message_id": message_id})
+            await asyncio.Event().wait()
+        finally:
+            self.cleanup_entered.set()
+            await self.release_cleanup.wait()
+            self.cleanup_done.set()
+
+
 @pytest.mark.asyncio
 async def test_cleanup_failure_without_primary_error_maps_to_one_safe_error() -> None:
     runtime = ConversationRuntime(cast(ConversationGraph, CleanupFailingGraph()))
@@ -231,3 +257,85 @@ async def test_cleanup_failure_without_primary_error_maps_to_one_safe_error() ->
     assert [event.type for event in events] == ["response.started", "response.delta", "error"]
     assert events[-1].data["code"] == ErrorCode.GENERATION_FAILED
     assert events[-1].data["message"] == "Unable to generate a response"
+
+
+@pytest.mark.asyncio
+async def test_close_does_not_recancel_pump_owned_by_cancel_cleanup() -> None:
+    runtime = GatedCleanupRuntime()
+    events: list[ServerEvent] = []
+
+    async def send(event: ServerEvent) -> None:
+        events.append(event)
+
+    session = ConversationSession("conv-1", cast(ConversationRuntime, runtime), send)
+    response_id = session.start("msg-1", "hello")
+    await asyncio.sleep(0)
+    cancel_task = asyncio.create_task(session.cancel(response_id))
+    await runtime.cleanup_entered.wait()
+    close_task = asyncio.create_task(session.close())
+    await asyncio.sleep(0)
+
+    runtime.release_cleanup.set()
+    await close_task
+    cancel_result = await asyncio.gather(cancel_task, return_exceptions=True)
+
+    assert runtime.cleanup_done.is_set()
+    assert runtime.pump_task is not None
+    assert runtime.pump_task.cancelling() == 1
+    assert isinstance(cancel_result[0], asyncio.CancelledError)
+    assert [event.type for event in events] == ["response.started"]
+    assert session.active_response_id is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_close_only_cancels_pump_once_and_both_wait_for_cleanup() -> None:
+    runtime = GatedCleanupRuntime()
+
+    async def send(event: ServerEvent) -> None:
+        del event
+
+    session = ConversationSession("conv-1", cast(ConversationRuntime, runtime), send)
+    session.start("msg-1", "hello")
+    await asyncio.sleep(0)
+    first_close = asyncio.create_task(session.close())
+    await runtime.cleanup_entered.wait()
+    second_close = asyncio.create_task(session.close())
+    await asyncio.sleep(0)
+
+    assert runtime.pump_task is not None
+    cancelling_before_release = runtime.pump_task.cancelling()
+    runtime.release_cleanup.set()
+    await asyncio.gather(first_close, second_close)
+
+    assert cancelling_before_release == 1
+    assert runtime.cleanup_done.is_set()
+    assert session.active_response_id is None
+
+
+@pytest.mark.asyncio
+async def test_cancelling_one_close_waiter_does_not_cancel_pump_or_other_waiter() -> None:
+    runtime = GatedCleanupRuntime()
+
+    async def send(event: ServerEvent) -> None:
+        del event
+
+    session = ConversationSession("conv-1", cast(ConversationRuntime, runtime), send)
+    session.start("msg-1", "hello")
+    await asyncio.sleep(0)
+    surviving_close = asyncio.create_task(session.close())
+    await runtime.cleanup_entered.wait()
+    cancelled_close = asyncio.create_task(session.close())
+    await asyncio.sleep(0)
+
+    cancelled_close.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled_close
+    assert runtime.pump_task is not None
+    assert runtime.pump_task.cancelling() == 1
+    assert not runtime.pump_task.done()
+
+    runtime.release_cleanup.set()
+    await surviving_close
+
+    assert runtime.cleanup_done.is_set()
+    assert session.active_response_id is None

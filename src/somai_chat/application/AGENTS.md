@@ -39,6 +39,8 @@ cancelled 确认发送由当前 generation 的取消任务持有；
 发送完成或失败前 Session 保持忙碌。
 `close()` 会取消并等待该任务，返回后不会再发送 cancelled；
 关闭后的 Session 拒绝新一轮生成。
+并发 close 只会首次取消 pump；后续调用通过 shield 等待同一 cleanup，
+取消某个等待者不会把取消继续传播到 pump 或其他 close。
 异步发送回调不得调用当前 Session 的 `cancel()` 或 `close()`；
 这种生命周期重入会在修改状态前抛出固定的内部 `RuntimeError`，避免任务自取消或自等待。
 

@@ -44,6 +44,17 @@ class _SendFailed(Exception):
     """Stop a connection pump without attempting another send."""
 
 
+async def _wait_for_task[T](task: asyncio.Task[T]) -> None:
+    waiter = asyncio.current_task()
+    initial_cancelling = waiter.cancelling() if waiter is not None else 0
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        waiter_was_cancelled = waiter is not None and waiter.cancelling() > initial_cancelling
+        if waiter_was_cancelled or not task.cancelled():
+            raise
+
+
 def _chunk_text(chunk: AIMessageChunk) -> str:
     content = chunk.content
     if isinstance(content, str):
@@ -189,10 +200,7 @@ class ConversationSession:
             raise SomaiError(ErrorCode.CANCEL_NOT_FOUND, "Active response not found")
 
         if generation.terminal_claimed:
-            try:
-                await generation.task
-            except asyncio.CancelledError:
-                pass
+            await _wait_for_task(generation.task)
             raise SomaiError(ErrorCode.CANCEL_NOT_FOUND, "Active response not found")
 
         owner = asyncio.current_task()
@@ -202,10 +210,7 @@ class ConversationSession:
         try:
             cancellation_requested = generation.task.cancel()
             if cancellation_requested:
-                try:
-                    await generation.task
-                except asyncio.CancelledError:
-                    pass
+                await _wait_for_task(generation.task)
             if not cancellation_requested or generation.terminal_claimed:
                 raise SomaiError(ErrorCode.CANCEL_NOT_FOUND, "Active response not found")
             if not self._closed:
@@ -222,7 +227,7 @@ class ConversationSession:
         finally:
             if generation.cancellation_owner is owner:
                 generation.cancellation_owner = None
-            if self._active is generation:
+            if self._active is generation and generation.task.done():
                 self._active = None
 
     async def close(self) -> None:
@@ -232,18 +237,18 @@ class ConversationSession:
         self._closed = True
         if generation is None or generation.task is None:
             return
-        current_task = asyncio.current_task()
-        lifecycle_task = generation.cancellation_owner or generation.task
-        if lifecycle_task is current_task:
-            lifecycle_task = generation.task
-        lifecycle_task.cancel()
-        try:
-            await lifecycle_task
-        except asyncio.CancelledError:
-            pass
-        finally:
-            if self._active is generation:
-                self._active = None
+        cancellation_owner = generation.cancellation_owner
+        if cancellation_owner is not None:
+            if not cancellation_owner.done() and cancellation_owner.cancelling() == 0:
+                cancellation_owner.cancel()
+            await _wait_for_task(cancellation_owner)
+            await _wait_for_task(generation.task)
+        else:
+            if not generation.task.done() and generation.task.cancelling() == 0:
+                generation.task.cancel()
+            await _wait_for_task(generation.task)
+        if self._active is generation:
+            self._active = None
 
     async def _pump(self, generation: _Generation, content: str) -> None:
         try:
