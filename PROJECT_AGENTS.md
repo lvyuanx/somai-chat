@@ -35,7 +35,7 @@ MVP 使用进程内 Checkpointer 和会话并发控制，仅支持单进程部�
 
 ## 质量命令
 
-- `make install`：创建并安装开发环境。
+- `make install`：执行 `uv sync --locked --extra dev`，严格按 `uv.lock` 创建开发环境并 editable 安装项目。
 - `make dev`：通过 `python -m somai_chat.main` 启动本地开发服务；监听地址、端口、reload 模式与
   WebSocket 帧上限均来自同一个 `Settings` 实例。
 - `make format`：格式化代码。
@@ -45,4 +45,5 @@ MVP 使用进程内 Checkpointer 和会话并发控制，仅支持单进程部�
 - `make check`：依次运行 lint、typecheck 和 test。
 - `node tests/js/web_console_state.mjs` 与 `node tests/js/console_view.mjs`：验证浏览器协议状态机与有界视图。
 - `uv build`：构建包含调试台静态资源的 wheel 与 sdist。
-- `docker build -t somai-chat:mvp .`：构建 Python 3.12 slim 非 root 生产镜像。
+- `docker build -t somai-chat:mvp .`：使用固定 uv 0.11.13 和锁文件构建 Python 3.12 slim 非 root 生产镜像；
+  runtime 只复制非 editable venv，不携带 uv 或编译工具。

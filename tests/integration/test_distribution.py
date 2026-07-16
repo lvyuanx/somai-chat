@@ -1,4 +1,10 @@
+import json
+import subprocess
+import urllib.request
+import zipfile
 from pathlib import Path
+
+import pytest
 
 from somai_chat.core.config import Settings
 
@@ -11,7 +17,27 @@ def test_container_runs_as_somai_through_application_entrypoint() -> None:
     assert "USER somai" in dockerfile
     assert 'CMD ["python", "-m", "somai_chat.main"]' in dockerfile
     assert "EXPOSE 8000" in dockerfile
+    assert (ROOT / "uv.lock").is_file()
+    assert "ARG UV_VERSION=0.11.13" in dockerfile
+    assert "COPY pyproject.toml uv.lock README.md ./" in dockerfile
+    assert "uv sync --locked --no-dev" in dockerfile
     assert "replace-me" not in dockerfile
+
+
+def test_container_healthcheck_uses_configured_runtime_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    health_line = next(
+        line.strip() for line in dockerfile.splitlines() if line.strip().startswith('CMD ["python", "-c"')
+    )
+    command = json.loads(health_line.removeprefix("CMD "))
+    requested_urls: list[str] = []
+
+    monkeypatch.setenv("SOMAI_PORT", "8123")
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout: requested_urls.append(f"{url}|{timeout}"))
+    exec(command[2], {})
+
+    assert command[:2] == ["python", "-c"]
+    assert requested_urls == ["http://127.0.0.1:8123/health/live|2"]
 
 
 def test_readme_documents_settings_and_make_commands() -> None:
@@ -30,6 +56,8 @@ def test_readme_documents_settings_and_make_commands() -> None:
         "make check",
     ):
         assert command in readme
+    assert "uv sync --locked --extra dev" in (ROOT / "Makefile").read_text()
+    assert "-e SOMAI_ENVIRONMENT=production" in readme
 
 
 def test_distribution_contract_keeps_secrets_and_build_outputs_out() -> None:
@@ -43,8 +71,19 @@ def test_distribution_contract_keeps_secrets_and_build_outputs_out() -> None:
     assert {"dist/", "build/", ".venv/", "__pycache__/"} <= set(gitignore)
 
 
-def test_python_package_contains_browser_console_assets() -> None:
-    web = ROOT / "src" / "somai_chat" / "web"
+def test_built_wheel_contains_browser_console_assets(tmp_path: Path) -> None:
+    subprocess.run(
+        ["uv", "build", "--wheel", "--out-dir", str(tmp_path)],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    wheel = next(tmp_path.glob("somai_chat-*.whl"))
+    expected = {
+        f"somai_chat/web/{asset}"
+        for asset in ("index.html", "app.css", "responsive.css", "app.js", "view.js", "markdown.js")
+    }
 
-    for asset in ("index.html", "app.css", "responsive.css", "app.js", "view.js", "markdown.js"):
-        assert (web / asset).is_file()
+    with zipfile.ZipFile(wheel) as archive:
+        assert expected <= set(archive.namelist())

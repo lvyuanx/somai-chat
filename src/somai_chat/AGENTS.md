@@ -23,3 +23,5 @@ lifespan 成功时将 Settings、Runtime 和 ready 状态注入 `app.state`；�
 ## 部署与注意事项
 
 `python -m somai_chat.main` 是规范入口，host、port、development reload 与 WebSocket 最大帧均来自 Settings。Graph Checkpointer 和会话并发状态只在单进程内存中，重启丢失且不支持多 worker/多实例。新增模块必须从组合根注入依赖，不得在业务模块读取环境变量或创建隐藏全局客户端。
+本地依赖必须通过 `uv sync --locked --extra dev` 消费锁文件；容器 builder 使用固定 uv 版本创建非 editable
+生产 venv，runtime 只复制该 venv。容器 healthcheck 从 `SOMAI_PORT` 读取探针端口，默认 8000。

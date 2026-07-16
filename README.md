@@ -95,7 +95,8 @@ make test
 make check
 ```
 
-`make install` 建立 `.venv`；也可直接运行 `.venv/bin/python -m pytest -q`。浏览器状态机的 Node harness 为：
+`make install` 运行 `uv sync --locked --extra dev`，按 `uv.lock` 建立 `.venv` 并以 editable 模式安装项目；
+也可直接运行 `.venv/bin/python -m pytest -q`。浏览器状态机的 Node harness 为：
 
 ```bash
 node tests/js/web_console_state.mjs
@@ -106,10 +107,19 @@ node tests/js/console_view.mjs
 
 ```bash
 docker build -t somai-chat:mvp .
-docker run --rm --env-file .env -p 8000:8000 somai-chat:mvp
+docker run --rm --env-file .env -e SOMAI_ENVIRONMENT=production -p 8000:8000 somai-chat:mvp
 ```
 
-镜像使用 Python 3.12 slim，多阶段安装 wheel，运行阶段不含编译工具，并以非 root `somai` 用户执行 `python -m somai_chat.main`。容器需要 `SOMAI_HOST=0.0.0.0`，端口映射应与 `SOMAI_PORT` 一致。
+`.env.example` 默认为 development，上述命令必须覆盖为 production，避免容器启动 reload；正式环境文件应直接设置
+`SOMAI_ENVIRONMENT=production`。镜像使用 Python 3.12 slim，builder 固定 uv 0.11.13 并执行锁定同步；runtime
+只复制可运行 venv，不包含 uv 或编译工具，并以非 root `somai` 用户执行 `python -m somai_chat.main`。
+容器需要 `SOMAI_HOST=0.0.0.0`，healthcheck 会读取运行时 `SOMAI_PORT`。
+
+自定义容器端口时，环境变量与 `-p` 的容器端端口必须一致，例如：
+
+```bash
+docker run --rm --env-file .env -e SOMAI_ENVIRONMENT=production -e SOMAI_PORT=9000 -p 9000:9000 somai-chat:mvp
+```
 
 ## 部署、安全与扩展
 

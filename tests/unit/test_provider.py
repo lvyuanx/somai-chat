@@ -74,3 +74,35 @@ def test_custom_compatible_endpoint_does_not_request_stream_usage() -> None:
     )
 
     assert model.stream_usage is False
+
+
+@pytest.mark.parametrize(
+    "proxy_environment",
+    [
+        {"NO_PROXY": "models.example.test"},
+        {
+            "HTTPS_PROXY": "http://127.0.0.1:9",
+            "NO_PROXY": "models.example.test",
+        },
+    ],
+)
+def test_create_chat_model_accepts_supported_proxy_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    proxy_environment: dict[str, str],
+) -> None:
+    secret = "proxy-matrix-secret"
+    for name, value in proxy_environment.items():
+        monkeypatch.setenv(name, value)
+    _client_utils._cached_sync_httpx_client.cache_clear()
+    _client_utils._cached_async_httpx_client.cache_clear()
+
+    model = create_chat_model(
+        Settings(
+            openai_api_key=SecretStr(secret),
+            openai_base_url="https://models.example.test/v1",
+            openai_model="example-chat",
+        )
+    )
+
+    assert model.model_name == "example-chat"
+    assert secret not in repr(model)

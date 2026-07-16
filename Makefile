@@ -3,8 +3,7 @@
 PYTHON := .venv/bin/python
 
 install:
-	uv venv --python 3.12
-	uv pip install --python $(PYTHON) -e '.[dev]'
+	uv sync --locked --extra dev
 
 dev:
 	uv run python -m somai_chat.main
