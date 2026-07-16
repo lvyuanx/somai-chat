@@ -25,7 +25,8 @@
     conversationId: restoreConversationId(),
     socket: null,
     connection: "connecting",
-    generating: false,
+    phase: "idle",
+    pendingMessageId: null,
     activeResponseId: null,
     activeAssistant: null,
     reconnectAttempts: 0,
@@ -233,24 +234,38 @@
   function updateControls() {
     const hasContent = elements.input.value.trim().length > 0;
     const ready = state.connection === "ready";
-    elements.sendStop.textContent = state.generating ? "Stop" : "Send";
-    elements.sendStop.dataset.mode = state.generating ? "stop" : "send";
-    elements.sendStop.disabled = state.generating ? !state.activeResponseId : !ready || !hasContent;
-    elements.input.disabled = state.generating;
+    const label = state.phase === "pending" ? "Waiting"
+      : state.phase === "streaming" ? "Stop"
+        : state.phase === "cancelling" ? "Stopping" : "Send";
+    elements.sendStop.textContent = label;
+    elements.sendStop.dataset.mode = state.phase === "streaming" ? "stop" : "send";
+    elements.sendStop.disabled = state.phase === "pending" || state.phase === "cancelling"
+      ? true
+      : state.phase === "streaming" ? !state.activeResponseId : !ready || !hasContent;
+    elements.input.disabled = state.phase !== "idle";
+  }
+
+  function resetRequestState() {
+    state.phase = "idle";
+    state.pendingMessageId = null;
+    state.activeResponseId = null;
+    state.activeAssistant = null;
   }
 
   function finishGeneration(label, error = false) {
     if (state.activeAssistant) {
       renderBody(state.activeAssistant.body, state.activeAssistant.content, false);
     }
-    state.generating = false;
-    state.activeResponseId = null;
-    state.activeAssistant = null;
+    resetRequestState();
     if (label) {
       appendMessage("system", label, {error});
     }
     updateControls();
     elements.input.focus();
+  }
+
+  function matchesActiveResponse(data) {
+    return typeof data.response_id === "string" && data.response_id === state.activeResponseId;
   }
 
   function handleEvent(event) {
@@ -264,26 +279,35 @@
       elements.model.textContent = typeof data.model === "string" ? data.model : "configured runtime";
       setStatus("Ready", "ready");
     } else if (event.type === "response.started") {
-      state.activeResponseId = typeof data.response_id === "string" ? data.response_id : null;
-      state.generating = true;
+      if (state.phase !== "pending" || data.message_id !== state.pendingMessageId) {
+        return;
+      }
+      if (typeof data.response_id !== "string") {
+        return;
+      }
+      state.pendingMessageId = null;
+      state.activeResponseId = data.response_id;
+      state.phase = "streaming";
       state.activeAssistant = appendMessage("assistant", "", {streaming: true});
       updateControls();
-    } else if (event.type === "response.delta" && state.activeAssistant) {
+    } else if (event.type === "response.delta" && matchesActiveResponse(data) && state.activeAssistant) {
       if (typeof data.delta === "string") {
         state.activeAssistant.content += data.delta;
         renderBody(state.activeAssistant.body, state.activeAssistant.content, true);
         elements.timeline.scrollTop = elements.timeline.scrollHeight;
       }
-    } else if (event.type === "response.completed") {
+    } else if (event.type === "response.completed" && matchesActiveResponse(data)) {
       if (state.activeAssistant && typeof data.content === "string") {
         state.activeAssistant.content = data.content;
       }
       finishGeneration("");
-    } else if (event.type === "response.cancelled") {
+    } else if (event.type === "response.cancelled" && matchesActiveResponse(data)) {
       finishGeneration("Generation stopped.");
     } else if (event.type === "error") {
       const message = typeof data.message === "string" ? data.message : "The request could not be completed.";
-      if (state.generating) {
+      const matchesPendingError = state.phase === "pending" && data.message_id === state.pendingMessageId;
+      const matchesActiveError = state.phase !== "idle" && matchesActiveResponse(data);
+      if (matchesPendingError || matchesActiveError) {
         finishGeneration(message, true);
       } else {
         appendMessage("system", message, {error: true});
@@ -318,8 +342,10 @@
         return;
       }
       state.socket = null;
-      if (state.generating) {
+      if (state.phase !== "idle") {
         finishGeneration("Connection closed; the last message was not replayed.", true);
+      } else {
+        resetRequestState();
       }
       if (state.intentionalClose) {
         return;
@@ -348,10 +374,18 @@
   }
 
   function submitMessage() {
-    if (state.generating) {
-      if (state.activeResponseId) {
-        sendEvent({type: "response.cancel", data: {response_id: state.activeResponseId}});
+    if (state.phase === "pending" || state.phase === "cancelling") {
+      return;
+    }
+    if (state.phase === "streaming" && state.activeResponseId) {
+      const cancelEvent = {type: "response.cancel", data: {response_id: state.activeResponseId}};
+      if (sendEvent(cancelEvent)) {
+        state.phase = "cancelling";
+        updateControls();
       }
+      return;
+    }
+    if (state.phase !== "idle") {
       return;
     }
     const content = elements.input.value.trim();
@@ -362,6 +396,8 @@
     const messageId = `msg_${randomToken()}_${state.messageSequence}`.slice(0, 128);
     const event = {type: "message.create", data: {message_id: messageId, content}};
     if (sendEvent(event)) {
+      state.pendingMessageId = messageId;
+      state.phase = "pending";
       appendMessage("user", content);
       elements.input.value = "";
       elements.count.textContent = `0 / ${MAX_MESSAGE_LENGTH}`;
@@ -391,9 +427,7 @@
     }
     state.conversationId = createConversationId();
     state.reconnectAttempts = 0;
-    state.generating = false;
-    state.activeResponseId = null;
-    state.activeAssistant = null;
+    resetRequestState();
     elements.conversationId.textContent = state.conversationId;
     while (elements.timeline.firstChild) {
       elements.timeline.removeChild(elements.timeline.firstChild);

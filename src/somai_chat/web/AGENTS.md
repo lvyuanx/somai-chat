@@ -21,11 +21,16 @@
 ## 主要流程与数据流
 
 页面从 `localStorage` 恢复或生成 `conv_` 前缀 ASCII 会话 ID，根据当前页面协议选择 `ws`/`wss`。
-收到 `conversation.ready` 后启用发送；started 创建回复气泡，delta 增量重绘安全 Markdown，
-completed、cancelled
-或 error 结束当前生成。生成期间主按钮只发送 `response.cancel`，不会创建第二条消息。
+收到 `conversation.ready` 后启用发送。
+消息成功写入 WebSocket 后立即从 idle 进入 pending，禁止在 started
+返回前重复发送；匹配 pending message ID 的 started 使状态进入 streaming 并创建回复气泡。
+delta、completed、cancelled 与 error 只有关联当前 message/response ID 时才能更新或结束当前请求。
+streaming 状态下主按钮只发送一次 `response.cancel`，
+成功写入后立即进入 cancelling 并禁用按钮，
+直到匹配的终态事件到达。
 
-意外断线使用最多五次指数退避重连，不重放上一次消息。
+意外断线使用最多五次指数退避重连，不重放上一次消息；
+任何非 idle 请求会清理并显示未重放提示。
 新建会话主动关闭旧连接、清空本地视图并连接新 ID；
 清空显示仅删除消息与轨迹 DOM。页面卸载时主动关闭连接。
 
