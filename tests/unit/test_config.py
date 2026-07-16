@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from somai_chat.core.config import Settings, get_settings
+from somai_chat.core.config import Settings, get_settings, normalize_origin
 
 
 def test_settings_accept_openai_compatible_provider() -> None:
@@ -26,6 +26,67 @@ def test_settings_reject_non_positive_message_limit() -> None:
             openai_model="chat-model",
             max_message_length=0,
         )
+
+
+def test_settings_reject_non_positive_websocket_byte_limit() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            openai_api_key=SecretStr("secret"),
+            openai_model="chat-model",
+            max_websocket_message_bytes=0,
+        )
+
+
+def test_settings_defaults_websocket_byte_limit() -> None:
+    settings = Settings(openai_api_key="secret", openai_model="chat-model")
+
+    assert settings.max_websocket_message_bytes == 32768
+
+
+@pytest.mark.parametrize(
+    ("origin", "expected"),
+    [
+        ("HTTP://Example.COM:80", "http://example.com"),
+        ("https://LOCALHOST:443", "https://localhost"),
+        ("http://127.0.0.1:8080", "http://127.0.0.1:8080"),
+        ("https://[::1]:8443", "https://[::1]:8443"),
+    ],
+)
+def test_normalize_origin_canonicalizes_standard_origins(origin: str, expected: str) -> None:
+    assert normalize_origin(origin) == expected
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "ftp://example.com",
+        "https://example.com/path",
+        "https://example.com?query=yes",
+        "https://example.com#fragment",
+        "https://user@example.com",
+        "https://example.com:invalid",
+        "https://example.com:",
+        "https://example.com ",
+        "https://exa mple.com",
+        "https://-example.com",
+        "https://example..com",
+        "http://999.999.999.999",
+        "https://",
+    ],
+)
+def test_normalize_origin_rejects_non_origin_values(origin: str) -> None:
+    with pytest.raises(ValueError):
+        normalize_origin(origin)
+
+
+def test_settings_normalizes_allowed_origins() -> None:
+    settings = Settings(
+        openai_api_key="secret",
+        openai_model="chat-model",
+        allowed_origins=["HTTP://Example.COM:80", "https://LOCALHOST:443"],
+    )
+
+    assert settings.allowed_origins == ["http://example.com", "https://localhost"]
 
 
 def test_settings_hide_api_key_in_repr() -> None:
@@ -83,16 +144,25 @@ def test_settings_load_from_dotenv_file(tmp_path: Path, monkeypatch: pytest.Monk
     assert str(settings.openai_base_url).rstrip("/") == "https://dotenv.example/v1"
 
 
-def test_dev_target_explains_missing_api_entry_point(tmp_path: Path) -> None:
+def test_dev_target_runs_uvicorn_with_websocket_size_limit() -> None:
     project_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
-        ["make", "-f", str(project_root / "Makefile"), "dev"],
-        cwd=tmp_path,
-        check=False,
+        ["make", "-n", "dev"],
+        cwd=project_root,
+        check=True,
         capture_output=True,
         text=True,
         timeout=10,
     )
 
-    assert result.returncode != 0
-    assert "API entry point is not implemented yet; complete Task 5" in result.stdout + result.stderr
+    output = result.stdout + result.stderr
+    assert "uvicorn somai_chat.main:app" in output
+    assert "--ws-max-size" in output
+    assert "SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES" in output
+    assert "API entry point is not implemented yet" not in output
+
+
+def test_example_environment_documents_websocket_size_limit() -> None:
+    project_root = Path(__file__).resolve().parents[2]
+
+    assert "SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES=32768" in (project_root / ".env.example").read_text()

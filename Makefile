@@ -7,11 +7,8 @@ install:
 	uv pip install --python $(PYTHON) -e '.[dev]'
 
 dev:
-	@if [ ! -f src/somai_chat/main.py ]; then \
-		echo "API entry point is not implemented yet; complete Task 5"; \
-		exit 1; \
-	fi
-	uv run uvicorn somai_chat.main:app --reload --host 0.0.0.0 --port 8000
+	uv run uvicorn somai_chat.main:app --reload --host 0.0.0.0 --port 8000 \
+		--ws-max-size $${SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES:-32768}
 
 format:
 	$(PYTHON) -m ruff format .

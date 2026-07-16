@@ -20,7 +20,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from somai_chat.agent.graph import ConversationGraph
 from somai_chat.application.conversation import ConversationRuntime
-from somai_chat.core.config import Settings
+from somai_chat.core.config import Settings, get_settings
 from somai_chat.core.logging import JsonFormatter
 from somai_chat.main import create_app
 
@@ -79,9 +79,9 @@ def make_test_settings() -> Settings:
     )
 
 
-def app_client(runtime: object | None = None) -> TestClient:
+def app_client(runtime: object | None = None, *, settings: Settings | None = None) -> TestClient:
     selected = runtime or ConversationRuntime(cast(ConversationGraph, StreamingGraph()))
-    return TestClient(create_app(settings=make_test_settings(), runtime=selected))
+    return TestClient(create_app(settings=settings or make_test_settings(), runtime=selected))
 
 
 def receive_types(socket: Any, count: int) -> list[str]:
@@ -99,15 +99,19 @@ def without_model_environment() -> Any:
 
 
 def test_module_import_is_safe_without_model_environment() -> None:
-    with without_model_environment():
-        sys.modules.pop("somai_chat.main", None)
-        module = importlib.import_module("somai_chat.main")
+    get_settings.cache_clear()
+    try:
+        with without_model_environment():
+            sys.modules.pop("somai_chat.main", None)
+            module = importlib.import_module("somai_chat.main")
 
-    with TestClient(module.app) as client:
-        assert client.get("/health/live").json() == {"status": "alive"}
-        response = client.get("/health/ready")
-        assert response.status_code == 503
-        assert response.json() == {"status": "not_ready"}
+        with TestClient(module.app) as client:
+            assert client.get("/health/live").json() == {"status": "alive"}
+            response = client.get("/health/ready")
+            assert response.status_code == 503
+            assert response.json() == {"status": "not_ready"}
+    finally:
+        get_settings.cache_clear()
 
 
 def test_health_live_and_ready_with_injected_dependencies() -> None:
@@ -163,6 +167,70 @@ def test_invalid_input_returns_error_and_connection_remains_usable(payload: str)
     assert pong["data"] == {"correlation_id": "probe"}
 
 
+def test_binary_input_returns_error_and_connection_remains_usable() -> None:
+    with app_client() as client, client.websocket_connect("/api/v1/chat/ws/conv_binary") as socket:
+        socket.receive_json()
+        socket.send_bytes(b'{"type":"ping","data":{}}')
+        error = socket.receive_json()
+        socket.send_json({"type": "ping", "data": {"correlation_id": "after_binary"}})
+        pong = socket.receive_json()
+
+    assert error["data"]["code"] == "INVALID_MESSAGE"
+    assert pong["data"]["correlation_id"] == "after_binary"
+
+
+def test_raw_text_byte_limit_accepts_boundary_and_rejects_one_more_byte() -> None:
+    payload = json.dumps(
+        {"type": "message.create", "data": {"message_id": "msg_limit", "content": "hello"}},
+        separators=(",", ":"),
+    )
+    settings = Settings(
+        openai_api_key="secret",
+        openai_model="model",
+        max_websocket_message_bytes=len(payload.encode("utf-8")),
+        allowed_origins=["https://allowed.example"],
+    )
+    with app_client(settings=settings) as client:
+        with client.websocket_connect("/api/v1/chat/ws/conv_equal") as socket:
+            socket.receive_json()
+            socket.send_text(payload)
+            assert receive_types(socket, 4) == [
+                "response.started",
+                "response.delta",
+                "response.delta",
+                "response.completed",
+            ]
+        with client.websocket_connect("/api/v1/chat/ws/conv_over") as socket:
+            socket.receive_json()
+            socket.send_text(payload + " ")
+            assert socket.receive_json()["data"]["code"] == "INVALID_MESSAGE"
+            socket.send_json({"type": "ping", "data": {}})
+            assert socket.receive_json()["type"] == "pong"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        '{"type":"ping","data":{"correlation_id":' + "1" * 5000 + "}}",
+        '{"type":"ping","data":{"correlation_id":"\ud800"}}',
+    ],
+    ids=["python-integer-limit", "invalid-unicode-scalar"],
+)
+def test_json_value_errors_map_to_invalid_message_and_connection_recovers(payload: str) -> None:
+    settings = Settings(
+        openai_api_key="secret",
+        openai_model="model",
+        max_websocket_message_bytes=10000,
+        allowed_origins=["https://allowed.example"],
+    )
+    with app_client(settings=settings) as client, client.websocket_connect("/api/v1/chat/ws/conv_value") as socket:
+        socket.receive_json()
+        socket.send_text(payload)
+        assert socket.receive_json()["data"]["code"] == "INVALID_MESSAGE"
+        socket.send_json({"type": "ping", "data": {}})
+        assert socket.receive_json()["type"] == "pong"
+
+
 def test_busy_cancel_and_cancel_not_found_are_recoverable() -> None:
     runtime = BlockingRuntime()
     with app_client(runtime) as client, client.websocket_connect("/api/v1/chat/ws/conv_test") as socket:
@@ -183,9 +251,9 @@ def test_busy_cancel_and_cancel_not_found_are_recoverable() -> None:
 @pytest.mark.parametrize("conversation_id", ["bad id", "x" * 129, "é"])
 def test_invalid_conversation_id_is_closed_by_policy(conversation_id: str) -> None:
     with app_client() as client:
-        with pytest.raises(WebSocketDisconnect) as captured:
-            with client.websocket_connect(f"/api/v1/chat/ws/{conversation_id}"):
-                pass
+        with client.websocket_connect(f"/api/v1/chat/ws/{conversation_id}") as socket:
+            with pytest.raises(WebSocketDisconnect) as captured:
+                socket.receive_json()
     assert captured.value.code == 1008
 
 
@@ -200,14 +268,34 @@ def test_websocket_origin_policy_allows_configured_and_device_clients() -> None:
             assert socket.receive_json()["type"] == "conversation.ready"
 
 
+def test_websocket_origin_policy_normalizes_header_origin() -> None:
+    with app_client() as client:
+        with client.websocket_connect(
+            "/api/v1/chat/ws/conv_origin",
+            headers={"origin": "HTTPS://ALLOWED.EXAMPLE:443"},
+        ) as socket:
+            assert socket.receive_json()["type"] == "conversation.ready"
+
+
 def test_websocket_origin_policy_rejects_unconfigured_origin() -> None:
     with app_client() as client:
-        with pytest.raises(WebSocketDisconnect) as captured:
-            with client.websocket_connect(
-                "/api/v1/chat/ws/conv_origin",
-                headers={"origin": "https://denied.example"},
-            ):
-                pass
+        with client.websocket_connect(
+            "/api/v1/chat/ws/conv_origin",
+            headers={"origin": "https://denied.example"},
+        ) as socket:
+            with pytest.raises(WebSocketDisconnect) as captured:
+                socket.receive_json()
+    assert captured.value.code == 1008
+
+
+def test_websocket_origin_policy_rejects_malformed_origin() -> None:
+    with app_client() as client:
+        with client.websocket_connect(
+            "/api/v1/chat/ws/conv_origin",
+            headers={"origin": "https://allowed.example/path"},
+        ) as socket:
+            with pytest.raises(WebSocketDisconnect) as captured:
+                socket.receive_json()
     assert captured.value.code == 1008
 
 
@@ -215,9 +303,9 @@ def test_websocket_rejects_connection_when_runtime_is_unavailable() -> None:
     with app_client() as client:
         client.app.state.runtime = None
         client.app.state.ready = False
-        with pytest.raises(WebSocketDisconnect) as captured:
-            with client.websocket_connect("/api/v1/chat/ws/conv_unavailable"):
-                pass
+        with client.websocket_connect("/api/v1/chat/ws/conv_unavailable") as socket:
+            with pytest.raises(WebSocketDisconnect) as captured:
+                socket.receive_json()
     assert captured.value.code == 1013
 
 
@@ -261,6 +349,7 @@ def test_json_logging_serializes_correlation_fields_without_secrets() -> None:
             "message_id": "msg_1",
             "response_id": "resp_1",
             "error_code": "GENERATION_FAILED",
+            "connection_id": "conn_1",
             "api_key": SecretStr("test-secret"),
             "content": "secret body",
         },
@@ -269,6 +358,7 @@ def test_json_logging_serializes_correlation_fields_without_secrets() -> None:
 
     assert {"timestamp", "level", "logger", "message"} <= payload.keys()
     assert payload["conversation_id"] == "conv_1"
+    assert payload["connection_id"] == "conn_1"
     serialized = json.dumps(payload)
     assert "test-secret" not in serialized
     assert "secret body" not in serialized

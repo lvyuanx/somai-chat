@@ -48,13 +48,17 @@
 环境变量或 `.env` 文件进入 `Settings`，经校验后由应用组合根注入使用方。
 业务模块不直接读取环境变量。
 模块内部错误由使用方映射为 `ErrorCode` 和安全消息后跨边界传递。
-日志记录只接收 `conversation_id`、`message_id`、`response_id`、`error_code` 等关联字段，
+日志记录只接收 `connection_id`、`conversation_id`、`message_id`、`response_id`、
+`error_code` 等关联字段，
 不会自动序列化任意 extra 字段。
 
 ## 配置说明
 
 必填项为 OpenAI 兼容 API Key 与模型名称，两者都会去除首尾空白并拒绝空值。
-基础 URL、生成参数、消息长度及允许来源均在此集中定义。
+基础 URL、生成参数、消息字符数、WebSocket 原始文本字节数及允许来源均在此集中定义。
+`max_websocket_message_bytes` 默认 32768，并必须为正数；生产 Uvicorn 也使用相同值限制帧大小。
+允许来源只接受不含路径、查询、片段和用户信息的 HTTP/HTTPS Origin；主机转小写，
+默认 80/443 端口省略后再保存，localhost、IPv4 和 IPv6 均可使用。
 
 ## 扩展方式
 
@@ -69,3 +73,5 @@
 `SomaiError` 不得保存供应商响应、堆栈或其他内部异常。
 日志调用方必须使用固定消息，不得把用户正文、模型文本、API Key
 或供应商原始错误插入日志消息。
+结构化关联字段包括 `connection_id`、`conversation_id`、`message_id`、
+`response_id` 与 `error_code`，其他 extra 字段不会序列化。

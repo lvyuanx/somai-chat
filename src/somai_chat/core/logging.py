@@ -10,6 +10,7 @@ class JsonFormatter(logging.Formatter):
     """Format stable application fields as one JSON object per record."""
 
     correlation_fields: ClassVar[tuple[str, ...]] = (
+        "connection_id",
         "conversation_id",
         "message_id",
         "response_id",

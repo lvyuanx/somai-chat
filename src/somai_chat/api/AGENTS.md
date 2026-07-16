@@ -46,11 +46,14 @@
 服务端业务数据通过 `ServerEvent.create` 包装为通用信封。
 序列化为 JSON 时，UTC 时间戳使用 RFC 3339 的 `Z` 后缀。
 
-WebSocket 在 accept 前校验 `conversation_id`、运行时就绪状态和可选 Origin。
+WebSocket 先完成握手，再校验 `conversation_id`、运行时就绪状态和可选 Origin，
+从而让真实客户端收到稳定的 1008 或 1013 WebSocket 关闭码，而不是 HTTP 403。
 设备客户端未发送 Origin 时允许连接；浏览器 Origin 必须精确匹配 `Settings.allowed_origins`。
-accept 后先发送 `conversation.ready`，随后创建的单连接 Session 在后台生成，
+Origin 先按 Core 的标准规则规范化，畸形值按策略关闭。
+校验通过后先发送 `conversation.ready`，随后创建的单连接 Session 在后台生成，
 接收循环继续处理取消和 ping。
 每个连接用异步锁串行化所有 `send_json`，避免后台生成与接收循环交错写入同一帧。
+接收循环显式区分断开、文本和二进制帧；二进制、超出原始 UTF-8 字节限制、
 非法 JSON、未知事件、忙碌和取消目标不存在都发送一个安全 `error` 信封且保持连接。
 断开或传输失败后在 `finally` 等待 Session 关闭，取消生成并禁止后续发送。
 
@@ -67,13 +70,16 @@ Application 的 `ConversationRuntime`/`ConversationSession` 及 Core 日志约�
 应用组合根在 lifespan 中把配置与 Runtime 写入 `app.state`；
 健康与 WebSocket 路由只读取注入结果，
 readiness 不调用 Runtime 或模型。
+每个连接生成独立 `connection_id`。连接生命周期日志始终同时携带 connection/conversation ID；
+可恢复请求错误在映射点记录一次，Session 生成错误在发送回调记录一次，避免重复日志。
 
 ## 扩展方式
 
 新增客户端事件时，应定义独立的严格 `data` 模型和字面量 `type`，加入判别联合，
 并先覆盖合法与非法载荷测试。新增服务端事件优先复用通用信封；
 仅在重复组装逻辑明显时增加小型工厂。
-新增传输认证或来源策略时应保持 accept 前拒绝，并继续允许无 Origin 的受控设备客户端。
+新增传输认证或来源策略时应保持握手后策略关闭，
+并继续允许无 Origin 的受控设备客户端。
 
 ## 注意事项
 
@@ -82,5 +88,5 @@ readiness 不调用 Runtime 或模型。
 - 所有协议字符串及 JSON 对象 key 必须是可编码为 UTF-8 的 Unicode scalar，禁止孤立 surrogate。
 - 标识符只允许 ASCII 字母、数字、下划线和连字符，长度为 1 到 128。
 - 对外错误必须使用 `core.errors.ErrorCode` 中的稳定错误码和安全消息，不得携带内部异常。
-- 未就绪连接以安全关闭码拒绝，不返回配置异常或供应商细节。
+- 未就绪连接在握手后以 1013 关闭，策略错误以 1008 关闭，均不发送 `conversation.ready`。
 - 传输日志只记录关联 ID、错误码和固定消息，不记录消息正文、模型文本或密钥。
