@@ -28,7 +28,7 @@ MVP 使用进程内 Checkpointer 和会话并发控制，仅支持单进程部�
 ## 质量命令
 
 - `make install`：创建并安装开发环境。
-- `make dev`：启动本地开发服务。
+- `make dev`：启动本地开发服务；Task 5 创建 API 入口前，该目标会以明确提示拒绝启动，完成 Task 5 后恢复为正常启动命令。
 - `make format`：格式化代码。
 - `make lint`：运行 Ruff 静态检查。
 - `make typecheck`：运行严格 mypy 检查。

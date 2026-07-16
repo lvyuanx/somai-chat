@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AnyHttpUrl, Field, SecretStr
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +18,25 @@ class Settings(BaseSettings):
     model_timeout_seconds: float = Field(default=30, gt=0)
     max_message_length: int = Field(default=8000, gt=0)
     allowed_origins: list[str] = Field(default_factory=lambda: ["http://localhost:8000", "http://127.0.0.1:8000"])
+
+    @field_validator("openai_api_key", mode="before")
+    @classmethod
+    def validate_openai_api_key(cls, value: object) -> object:
+        secret = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if isinstance(secret, str):
+            secret = secret.strip()
+            if not secret:
+                raise ValueError("OpenAI API key must not be empty")
+        return secret
+
+    @field_validator("openai_model", mode="before")
+    @classmethod
+    def validate_openai_model(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                raise ValueError("OpenAI model must not be empty")
+        return value
 
 
 @lru_cache
