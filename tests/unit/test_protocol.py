@@ -1,3 +1,4 @@
+import json
 from datetime import UTC
 
 import pytest
@@ -121,16 +122,27 @@ def test_parse_message_applies_limit_after_stripping_content() -> None:
 @pytest.mark.parametrize(
     "payload",
     [
+        {"type": "message.create", "data": {"message_id": "msg_123", "content": json.loads(r'"\ud800"')}},
+        {"type": json.loads(r'"\ud800"'), "data": {}},
+    ],
+    ids=["content", "type"],
+)
+def test_parse_client_event_rejects_lone_surrogates(payload: object) -> None:
+    with pytest.raises(SomaiError) as exc_info:
+        parse_client_event(payload, max_message_length=20)
+
+    assert_invalid_client_event(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
         {"type": "unknown", "data": {}},
-        {"type": "message.create", "data": {"message_id": "bad id", "content": "hello"}},
-        {"type": "message.create", "data": {"message_id": "x" * 129, "content": "hello"}},
-        {"type": "response.cancel", "data": {"response_id": "invalid!"}},
-        {"type": "ping", "data": {"correlation_id": "x" * 129}},
         {"type": "ping", "data": {}, "unexpected": True},
         {"type": "ping", "data": {"unexpected": True}},
     ],
 )
-def test_parse_client_event_rejects_invalid_type_ids_and_extra_fields(payload: object) -> None:
+def test_parse_client_event_rejects_unknown_type_and_extra_fields(payload: object) -> None:
     with pytest.raises(SomaiError) as exc_info:
         parse_client_event(payload, max_message_length=20)
 
@@ -175,6 +187,31 @@ def test_server_event_ids_are_unique() -> None:
 def test_server_event_rejects_nested_non_finite_numbers(non_finite: float) -> None:
     with pytest.raises(ValidationError):
         ServerEvent.create("response.completed", {"usage": {"score": non_finite}})
+
+
+def test_server_event_rejects_lone_surrogate_in_type() -> None:
+    with pytest.raises(ValidationError):
+        ServerEvent.create(json.loads(r'"\ud800"'), {})
+
+
+def test_server_event_rejects_lone_surrogate_in_data_value() -> None:
+    with pytest.raises(ValidationError):
+        ServerEvent.create("response.delta", {"delta": json.loads(r'"\ud800"')})
+
+
+def test_server_event_rejects_lone_surrogate_in_nested_data_key() -> None:
+    with pytest.raises(ValidationError):
+        ServerEvent.create("response.completed", {"usage": {json.loads(r'"\ud800"'): 1}})
+
+
+def test_server_event_valid_unicode_serializes_and_data_is_copied() -> None:
+    data: dict[str, str] = {"message": "你好 😀"}
+
+    event = ServerEvent.create("response.completed", data)
+    data["message"] = "changed"
+    payload = json.loads(event.model_dump_json())
+
+    assert payload["data"] == {"message": "你好 😀"}
 
 
 def client_event_with_id(event_type: str, field_name: str, identifier: str) -> dict[str, object]:

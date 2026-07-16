@@ -27,7 +27,8 @@
 
 - `parse_client_event(payload, max_message_length)`：按 `type` 判别并解析客户端事件，
   应用动态消息长度限制。
-- `ServerEvent.create(event_type, data)`：创建带 `evt_` 前缀唯一标识和 UTC 时间戳的服务端事件。
+- `ServerEvent.create(event_type, data)`：复制只读映射数据，
+  创建带 `evt_` 前缀唯一标识和 UTC 时间戳的服务端事件。
 
 ## 主要流程
 
@@ -59,6 +60,7 @@
 
 - 协议模型拒绝未知字段，防止客户端和服务端协议静默漂移。
 - 协议模型拒绝 `NaN` 与正负无穷，确保服务端信封始终可表示为严格 JSON。
+- 所有协议字符串及 JSON 对象 key 必须是可编码为 UTF-8 的 Unicode scalar，禁止孤立 surrogate。
 - 标识符只允许 ASCII 字母、数字、下划线和连字符，长度为 1 到 128。
 - 对外错误必须使用 `core.errors.ErrorCode` 中的稳定错误码和安全消息，不得携带内部异常。
 - 本模块不得提前实现 WebSocket 连接、并发控制或生成流程。

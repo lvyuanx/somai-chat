@@ -1,5 +1,6 @@
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from uuid import uuid4
 
 from pydantic import (
@@ -11,6 +12,7 @@ from pydantic import (
     TypeAdapter,
     ValidationError,
     field_validator,
+    model_validator,
 )
 
 from somai_chat.core.errors import ErrorCode, SomaiError
@@ -21,8 +23,31 @@ type Identifier = Annotated[
 ]
 
 
+def _validate_unicode_scalars(value: object) -> None:
+    if isinstance(value, str):
+        value.encode("utf-8")
+    elif isinstance(value, BaseModel):
+        for field_value in vars(value).values():
+            _validate_unicode_scalars(field_value)
+    elif isinstance(value, Mapping):
+        for key, item in value.items():
+            _validate_unicode_scalars(key)
+            _validate_unicode_scalars(item)
+    elif isinstance(value, list):
+        for item in value:
+            _validate_unicode_scalars(item)
+
+
 class ProtocolModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_unicode_scalars(self) -> Self:
+        try:
+            _validate_unicode_scalars(self)
+        except UnicodeEncodeError:
+            raise ValueError("Protocol strings must contain only Unicode scalar values") from None
+        return self
 
 
 class MessageCreateData(ProtocolModel):
@@ -88,10 +113,10 @@ class ServerEvent(ProtocolModel):
     data: dict[str, JsonValue]
 
     @classmethod
-    def create(cls, event_type: str, data: dict[str, JsonValue]) -> "ServerEvent":
+    def create(cls, event_type: str, data: Mapping[str, JsonValue]) -> "ServerEvent":
         return cls(
             type=event_type,
             event_id=f"evt_{uuid4().hex}",
             timestamp=datetime.now(UTC),
-            data=data,
+            data=dict(data),
         )
