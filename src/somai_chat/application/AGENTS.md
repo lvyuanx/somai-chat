@@ -22,8 +22,10 @@
 
 ## 核心接口与主要流程
 
-`ConversationRuntime.stream(conversation_id, message_id, content, response_id=...)` 把会话标识映射为
-LangGraph `thread_id`，过滤空的 AI 文本块，拼接最终文本并携带可用 usage。
+`ConversationRuntime.stream(...)` 把会话标识映射为
+LangGraph `thread_id`，过滤空的 AI 文本块，拼接最终文本并累加各流式块提供的 usage。
+Runtime 和 Session 都显式关闭下层异步流，
+确保取消、关闭或发送失败返回时 Graph 锁已经释放。
 
 `ConversationSession.start()` 同步返回本轮 `response_id` 并在后台泵送事件；
 活跃时再次调用会返回稳定忙碌错误。
@@ -31,6 +33,10 @@ LangGraph `thread_id`，过滤空的 AI 文本块，拼接最终文本并携带�
 `close()` 停止任务且不发送终态。
 若 completed 或 error 已取得终态发送权，`cancel()` 等待该发送结束并返回 `CANCEL_NOT_FOUND`，
 不得中断已经开始的终态发送。
+cancelled 确认发送由当前 generation 的取消任务持有；
+发送完成或失败前 Session 保持忙碌。
+`close()` 会取消并等待该任务，返回后不会再发送 cancelled；
+关闭后的 Session 拒绝新一轮生成。
 
 ## 依赖关系与数据流
 

@@ -50,3 +50,27 @@ def test_create_chat_model_does_not_expose_api_key_in_repr() -> None:
 
     assert secret not in repr(model)
     assert secret not in str(model)
+
+
+def test_official_openai_endpoint_requests_stream_usage() -> None:
+    model = create_chat_model(
+        Settings(
+            openai_api_key=SecretStr("provider-secret"),
+            openai_base_url="https://api.openai.com/v1",
+            openai_model="example-chat",
+        )
+    )
+
+    assert model.stream_usage is True
+
+
+def test_custom_compatible_endpoint_does_not_request_stream_usage() -> None:
+    model = create_chat_model(
+        Settings(
+            openai_api_key=SecretStr("provider-secret"),
+            openai_base_url="https://models.example.test/v1",
+            openai_model="example-chat",
+        )
+    )
+
+    assert model.stream_usage is False

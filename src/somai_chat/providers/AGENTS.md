@@ -18,6 +18,8 @@
 
 `create_chat_model(settings)` 接收组合根注入的 `Settings`，创建启用流式输出的 `ChatOpenAI`。
 它映射基础 URL、API Key、模型名、温度、最大输出、超时配置，不发起网络请求。
+官方 `api.openai.com` 端点启用流式 usage；自定义兼容端点不发送该选项，
+避免不支持 `stream_options` 的服务拒绝请求。
 
 ## 依赖关系与数据流
 
