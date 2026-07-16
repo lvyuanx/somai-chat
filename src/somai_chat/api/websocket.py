@@ -102,7 +102,12 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
 
     session = ConversationSession(conversation_id, runtime, session_send)
     try:
-        await raw_send(ServerEvent.create("conversation.ready", {"conversation_id": conversation_id}))
+        await raw_send(
+            ServerEvent.create(
+                "conversation.ready",
+                {"conversation_id": conversation_id, "model": settings.openai_model},
+            )
+        )
         logger.info("conversation connected", extra=log_context)
         while True:
             message_id: str | None = None

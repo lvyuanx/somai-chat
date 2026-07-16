@@ -4,9 +4,12 @@ import inspect
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from somai_chat.agent.graph import build_conversation_graph
 from somai_chat.api.health import router as health_router
@@ -17,6 +20,7 @@ from somai_chat.core.logging import configure_logging
 from somai_chat.providers.llm import create_chat_model
 
 logger = logging.getLogger(__name__)
+WEB_DIRECTORY = Path(__file__).with_name("web")
 
 
 async def _close_resource(resource: object | None) -> None:
@@ -70,6 +74,12 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
     application.state.ready = settings is not None and runtime is not None
     application.include_router(health_router)
     application.include_router(websocket_router)
+    application.mount("/assets", StaticFiles(directory=WEB_DIRECTORY), name="assets")
+
+    @application.get("/", include_in_schema=False, response_class=FileResponse)
+    async def debug_console() -> FileResponse:
+        return FileResponse(WEB_DIRECTORY / "index.html")
+
     return application
 
 

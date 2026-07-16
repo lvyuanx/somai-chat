@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#e9e5dc">
+    <title>SOMAI · Conversation Console</title>
+    <link rel="stylesheet" href="/assets/app.css">
+  </head>
+  <body>
+    <main class="console-shell">
+      <aside class="side-rail session-rail" aria-labelledby="session-heading">
+        <header class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">S</span>
+          <div>
+            <p class="eyebrow">Embodied cognition</p>
+            <h1>SOMAI</h1>
+          </div>
+        </header>
+
+        <section class="instrument-panel" aria-labelledby="session-heading">
+          <div class="section-rule">
+            <h2 id="session-heading">Session</h2>
+            <span>01</span>
+          </div>
+          <dl class="telemetry-list">
+            <div>
+              <dt>Link</dt>
+              <dd id="connection-status" class="status-value" aria-live="polite">
+                <span class="status-lamp" aria-hidden="true"></span>Initializing
+              </dd>
+            </div>
+            <div>
+              <dt>Conversation</dt>
+              <dd id="conversation-id">—</dd>
+            </div>
+            <div>
+              <dt>Runtime</dt>
+              <dd id="model-name">configured runtime</dd>
+            </div>
+          </dl>
+        </section>
+
+        <div class="rail-actions">
+          <button id="new-session" class="control-button" type="button">New session</button>
+          <button id="clear-display" class="control-button control-button--quiet" type="button">Clear display</button>
+        </div>
+        <p class="rail-note">Local diagnostic surface<br>Protocol /api/v1</p>
+      </aside>
+
+      <section class="conversation-panel" aria-labelledby="conversation-heading">
+        <header class="conversation-header">
+          <div>
+            <p class="eyebrow">Live dialogue channel</p>
+            <h2 id="conversation-heading">Conversation</h2>
+          </div>
+          <span class="channel-code">CH—01</span>
+        </header>
+
+        <div id="message-timeline" class="message-timeline" aria-live="polite" aria-relevant="additions text"></div>
+
+        <form id="composer" class="composer">
+          <div class="composer-heading">
+            <label for="message-input">Message input</label>
+            <output id="character-count" for="message-input">0 / 8000</output>
+          </div>
+          <textarea
+            id="message-input"
+            name="message"
+            maxlength="8000"
+            rows="3"
+            placeholder="Enter command or message…"
+            aria-describedby="composer-hint"
+          ></textarea>
+          <div class="composer-footer">
+            <p id="composer-hint">Enter to send · Shift + Enter for line break</p>
+            <button id="send-stop" class="primary-button" type="submit" disabled>Send</button>
+          </div>
+        </form>
+      </section>
+
+      <aside class="side-rail trace-rail" aria-labelledby="trace-heading">
+        <div class="section-rule">
+          <h2 id="trace-heading">Event trace</h2>
+          <span>RX/TX</span>
+        </div>
+        <ol id="event-trace" class="event-trace" aria-label="WebSocket event trace"></ol>
+      </aside>
+    </main>
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>
