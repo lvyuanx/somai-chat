@@ -1,6 +1,7 @@
 from datetime import UTC
 
 import pytest
+from pydantic import ValidationError
 
 from somai_chat.api.protocol import MessageCreate, Ping, ResponseCancel, ServerEvent, parse_client_event
 from somai_chat.core.errors import ErrorCode, SomaiError
@@ -51,6 +52,49 @@ def test_parse_ping(data: dict[str, str]) -> None:
 
     assert isinstance(event, Ping)
     assert event.data.correlation_id == data.get("correlation_id")
+
+
+@pytest.mark.parametrize(
+    ("event_type", "field_name"),
+    [
+        ("message.create", "message_id"),
+        ("response.cancel", "response_id"),
+        ("ping", "correlation_id"),
+    ],
+)
+@pytest.mark.parametrize("identifier", ["x", "x" * 128], ids=["one-character", "128-characters"])
+def test_parse_client_event_accepts_identifier_boundaries(
+    event_type: str,
+    field_name: str,
+    identifier: str,
+) -> None:
+    event = parse_client_event(client_event_with_id(event_type, field_name, identifier), max_message_length=20)
+
+    assert event.data.model_dump()[field_name] == identifier
+
+
+@pytest.mark.parametrize(
+    ("event_type", "field_name"),
+    [
+        ("message.create", "message_id"),
+        ("response.cancel", "response_id"),
+        ("ping", "correlation_id"),
+    ],
+)
+@pytest.mark.parametrize(
+    "identifier",
+    ["", "x" * 129, "invalid id", "invalid!"],
+    ids=["empty", "129-characters", "space", "invalid-character"],
+)
+def test_parse_client_event_rejects_invalid_identifier_boundaries(
+    event_type: str,
+    field_name: str,
+    identifier: str,
+) -> None:
+    with pytest.raises(SomaiError) as exc_info:
+        parse_client_event(client_event_with_id(event_type, field_name, identifier), max_message_length=20)
+
+    assert_invalid_client_event(exc_info.value)
 
 
 @pytest.mark.parametrize("content", ["", "   ", "message that is too long"])
@@ -121,6 +165,23 @@ def test_server_event_ids_are_unique() -> None:
     second = ServerEvent.create("pong", {})
 
     assert first.event_id != second.event_id
+
+
+@pytest.mark.parametrize(
+    "non_finite",
+    [float("nan"), float("inf"), float("-inf")],
+    ids=["nan", "positive-infinity", "negative-infinity"],
+)
+def test_server_event_rejects_nested_non_finite_numbers(non_finite: float) -> None:
+    with pytest.raises(ValidationError):
+        ServerEvent.create("response.completed", {"usage": {"score": non_finite}})
+
+
+def client_event_with_id(event_type: str, field_name: str, identifier: str) -> dict[str, object]:
+    data: dict[str, object] = {field_name: identifier}
+    if event_type == "message.create":
+        data["content"] = "hello"
+    return {"type": event_type, "data": data}
 
 
 def assert_invalid_client_event(error: SomaiError) -> None:

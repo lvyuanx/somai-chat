@@ -22,7 +22,7 @@ type Identifier = Annotated[
 
 
 class ProtocolModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
 
 
 class MessageCreateData(ProtocolModel):
