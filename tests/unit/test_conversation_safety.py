@@ -10,7 +10,7 @@ from langchain_core.messages import AIMessageChunk
 from somai_chat.agent.graph import ConversationGraph
 from somai_chat.api.protocol import ServerEvent
 from somai_chat.application.conversation import ConversationRuntime, ConversationSession
-from somai_chat.core.errors import ErrorCode
+from somai_chat.core.errors import ErrorCode, SomaiError
 
 LIFECYCLE_REENTRY_MESSAGE = "Conversation lifecycle cannot be changed from the send callback"
 
@@ -338,4 +338,32 @@ async def test_cancelling_one_close_waiter_does_not_cancel_pump_or_other_waiter(
     await surviving_close
 
     assert runtime.cleanup_done.is_set()
+    assert session.active_response_id is None
+
+
+@pytest.mark.asyncio
+async def test_cancel_cannot_take_ownership_after_close_started_pump_cleanup() -> None:
+    runtime = GatedCleanupRuntime()
+    events: list[ServerEvent] = []
+
+    async def send(event: ServerEvent) -> None:
+        events.append(event)
+
+    session = ConversationSession("conv-1", cast(ConversationRuntime, runtime), send)
+    response_id = session.start("msg-1", "hello")
+    await asyncio.sleep(0)
+    close_task = asyncio.create_task(session.close())
+    await runtime.cleanup_entered.wait()
+
+    with pytest.raises(SomaiError) as captured:
+        await session.cancel(response_id)
+
+    assert captured.value.code is ErrorCode.CANCEL_NOT_FOUND
+    assert runtime.pump_task is not None
+    assert runtime.pump_task.cancelling() == 1
+    runtime.release_cleanup.set()
+    await close_task
+
+    assert runtime.cleanup_done.is_set()
+    assert [event.type for event in events] == ["response.started"]
     assert session.active_response_id is None

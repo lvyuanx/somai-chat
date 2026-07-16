@@ -196,6 +196,8 @@ class ConversationSession:
             or generation.response_id != response_id
             or generation.task is None
             or generation.cancellation_owner is not None
+            or self._closed
+            or generation.task.cancelling() > 0
         ):
             raise SomaiError(ErrorCode.CANCEL_NOT_FOUND, "Active response not found")
 
