@@ -322,7 +322,7 @@ async def test_cancel_send_failure_is_swallowed_without_retry() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fast_completion_cancel_race_has_at_most_one_terminal_event() -> None:
+async def test_fast_completion_cancel_race_has_exactly_one_terminal_event() -> None:
     gate = asyncio.Event()
     recorder = EventRecorder()
     session = ConversationSession("conv-1", StubRuntime(controlled_events(gate)), recorder)
@@ -340,6 +340,36 @@ async def test_fast_completion_cancel_race_has_at_most_one_terminal_event() -> N
         event for event in recorder.events if event.type in {"response.completed", "response.cancelled", "error"}
     ]
     assert len(terminal) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_does_not_interrupt_a_claimed_completed_send() -> None:
+    completion_entered = asyncio.Event()
+    release_completion = asyncio.Event()
+    recorded: list[ServerEvent] = []
+
+    async def blocking_send(event: ServerEvent) -> None:
+        if event.type == "response.completed":
+            completion_entered.set()
+            await release_completion.wait()
+        recorded.append(event)
+
+    runtime_gate = asyncio.Event()
+    runtime_gate.set()
+    session = ConversationSession("conv-1", StubRuntime(controlled_events(runtime_gate)), blocking_send)
+    response_id = session.start("msg-1", "hello")
+    await completion_entered.wait()
+
+    cancel_task = asyncio.create_task(session.cancel(response_id))
+    await asyncio.sleep(0)
+    release_completion.set()
+    with pytest.raises(SomaiError) as captured:
+        await cancel_task
+
+    terminal = [event for event in recorded if event.type in {"response.completed", "response.cancelled", "error"}]
+    assert captured.value.code is ErrorCode.CANCEL_NOT_FOUND
+    assert [event.type for event in terminal] == ["response.completed"]
+    assert session.active_response_id is None
 
 
 @pytest.mark.asyncio

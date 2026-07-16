@@ -29,6 +29,8 @@ LangGraph `thread_id`，过滤空的 AI 文本块，拼接最终文本并携带�
 活跃时再次调用会返回稳定忙碌错误。
 `cancel()` 只取消匹配的活跃响应，等待任务停止后发送一次 cancelled；
 `close()` 停止任务且不发送终态。
+若 completed 或 error 已取得终态发送权，`cancel()` 等待该发送结束并返回 `CANCEL_NOT_FOUND`，
+不得中断已经开始的终态发送。
 
 ## 依赖关系与数据流
 

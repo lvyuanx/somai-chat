@@ -141,6 +141,13 @@ class ConversationSession:
         if generation is None or generation.response_id != response_id or generation.task is None:
             raise SomaiError(ErrorCode.CANCEL_NOT_FOUND, "Active response not found")
 
+        if generation.terminal_claimed:
+            try:
+                await generation.task
+            except asyncio.CancelledError:
+                pass
+            raise SomaiError(ErrorCode.CANCEL_NOT_FOUND, "Active response not found")
+
         cancellation_requested = generation.task.cancel()
         if cancellation_requested:
             try:
