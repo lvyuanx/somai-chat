@@ -105,7 +105,12 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
         await raw_send(
             ServerEvent.create(
                 "conversation.ready",
-                {"conversation_id": conversation_id, "model": settings.openai_model},
+                {
+                    "conversation_id": conversation_id,
+                    "max_message_length": settings.max_message_length,
+                    "max_websocket_message_bytes": settings.max_websocket_message_bytes,
+                    "model": settings.openai_model,
+                },
             )
         )
         logger.info("conversation connected", extra=log_context)

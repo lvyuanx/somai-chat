@@ -26,7 +26,7 @@
           <dl class="telemetry-list">
             <div>
               <dt>Link</dt>
-              <dd id="connection-status" class="status-value" aria-live="polite">
+              <dd id="connection-status" class="status-value">
                 <span class="status-lamp" aria-hidden="true"></span>Initializing
               </dd>
             </div>
@@ -57,7 +57,8 @@
           <span class="channel-code">CH—01</span>
         </header>
 
-        <div id="message-timeline" class="message-timeline" aria-live="polite" aria-relevant="additions text"></div>
+        <div id="message-timeline" class="message-timeline"></div>
+        <p id="live-status" class="visually-hidden" aria-live="polite"></p>
 
         <form id="composer" class="composer">
           <div class="composer-heading">
@@ -67,7 +68,6 @@
           <textarea
             id="message-input"
             name="message"
-            maxlength="8000"
             rows="3"
             placeholder="Enter command or message…"
             aria-describedby="composer-hint"
@@ -87,6 +87,6 @@
         <ol id="event-trace" class="event-trace" aria-label="WebSocket event trace"></ol>
       </aside>
     </main>
-    <script src="/assets/app.js" defer></script>
+    <script type="module" src="/assets/app.js"></script>
   </body>
 </html>

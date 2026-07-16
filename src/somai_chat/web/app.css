@@ -186,7 +186,7 @@ h1 {
   color: var(--ink-muted);
   border-color: var(--line-dark);
 }
-.control-button:hover,
+.control-button:hover:not(:disabled),
 .primary-button:hover:not(:disabled) {
   transform: translateY(-1px);
 }
@@ -364,6 +364,7 @@ h1 {
   background: var(--error-red);
   border-color: #70201c;
 }
+.control-button:disabled,
 .primary-button:disabled {
   color: #8b877f;
   background: #d4d0c7;
@@ -394,6 +395,17 @@ h1 {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
 button:focus-visible,
 textarea:focus-visible,
 a:focus-visible {
@@ -414,14 +426,51 @@ a:focus-visible {
 @media (max-width: 850px) {
   .console-shell {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     width: 100%;
     height: 100vh;
     min-height: 520px;
     margin: 0;
     border: 0;
   }
-  .side-rail {
+  .session-rail {
+    display: flex;
+    grid-row: 1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line-dark);
+  }
+  .brand-lockup,
+  .session-rail .section-rule,
+  .session-rail .telemetry-list > div:not(:first-child),
+  .rail-note,
+  .trace-rail {
     display: none;
+  }
+  .instrument-panel,
+  .telemetry-list,
+  .telemetry-list > div {
+    padding: 0;
+    margin: 0;
+    border: 0;
+  }
+  .rail-actions {
+    display: flex;
+    gap: 8px;
+    margin: 0;
+  }
+  .control-button {
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 0.6rem;
+  }
+  .conversation-panel {
+    grid-row: 2;
+    min-height: 0;
   }
   .conversation-header {
     padding-inline: 20px;

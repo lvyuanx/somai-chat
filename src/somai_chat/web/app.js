@@ -1,12 +1,18 @@
+import {markdownNodes} from "./markdown.js";
 (() => {
   "use strict";
 
-  const MAX_MESSAGE_LENGTH = 8000;
+  const DEFAULT_MAX_MESSAGE_LENGTH = 8000;
+  const DEFAULT_MAX_FRAME_BYTES = 32768;
   const MAX_TRACE_EVENTS = 120;
+  const MAX_TRACE_CODE_POINTS = 12000;
+  const MAX_TIMELINE_MESSAGES = 100;
+  const MAX_RESPONSE_CODE_POINTS = 100000;
   const MAX_RECONNECT_ATTEMPTS = 5;
+  const RESPONSE_TRUNCATED_NOTICE = "\n\n[Response truncated at the local display limit.]";
+  const TRACE_TRUNCATED_NOTICE = "\n… [trace truncated]";
   const CONVERSATION_PATTERN = /^conv_[A-Za-z0-9_-]{1,123}$/;
   const STORAGE_KEY = "somai.conversation_id";
-
   const elements = {
     composer: document.getElementById("composer"),
     input: document.getElementById("message-input"),
@@ -17,24 +23,27 @@
     conversationId: document.getElementById("conversation-id"),
     model: document.getElementById("model-name"),
     count: document.getElementById("character-count"),
+    hint: document.getElementById("composer-hint"),
+    liveStatus: document.getElementById("live-status"),
     newSession: document.getElementById("new-session"),
     clearDisplay: document.getElementById("clear-display"),
   };
-
   const state = {
     conversationId: restoreConversationId(),
     socket: null,
     connection: "connecting",
+    maxMessageLength: DEFAULT_MAX_MESSAGE_LENGTH,
+    maxFrameBytes: DEFAULT_MAX_FRAME_BYTES,
     phase: "idle",
     pendingMessageId: null,
     activeResponseId: null,
     activeAssistant: null,
+    renderFrameId: null,
     reconnectAttempts: 0,
     reconnectTimer: null,
     intentionalClose: false,
     messageSequence: 0,
   };
-
   function randomToken() {
     if (window.crypto && typeof window.crypto.randomUUID === "function") {
       return window.crypto.randomUUID().replaceAll("-", "");
@@ -45,7 +54,6 @@
   function createConversationId() {
     return `conv_${randomToken()}`.slice(0, 128);
   }
-
   function restoreConversationId() {
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -65,7 +73,6 @@
       // A functioning chat connection does not depend on persistent browser storage.
     }
   }
-
   function setStatus(label, kind) {
     const lamp = document.createElement("span");
     lamp.className = "status-lamp";
@@ -79,111 +86,30 @@
     updateControls();
   }
 
-  function appendInline(parent, source) {
-    const tokenPattern = /(`[^`\n]+`|\[[^\]\n]+\]\([^\s)]+\))/g;
-    let cursor = 0;
-    for (const match of source.matchAll(tokenPattern)) {
-      const index = match.index || 0;
-      parent.append(document.createTextNode(source.slice(cursor, index)));
-      const token = match[0];
-      if (token.startsWith("`")) {
-        const code = document.createElement("code");
-        code.textContent = token.slice(1, -1);
-        parent.append(code);
-      } else {
-        const split = token.lastIndexOf("](");
-        const label = token.slice(1, split);
-        const rawUrl = token.slice(split + 2, -1);
-        let safeUrl = null;
-        try {
-          const parsed = new URL(rawUrl);
-          if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-            safeUrl = parsed.href;
-          }
-        } catch (_error) {
-          safeUrl = null;
-        }
-        if (safeUrl) {
-          const link = document.createElement("a");
-          link.textContent = label;
-          link.setAttribute("href", safeUrl);
-          link.setAttribute("target", "_blank");
-          link.setAttribute("rel", "noopener noreferrer");
-          parent.append(link);
-        } else {
-          parent.append(document.createTextNode(label));
-        }
-      }
-      cursor = index + token.length;
-    }
-    parent.append(document.createTextNode(source.slice(cursor)));
+  function codePointLength(value) {
+    return Array.from(value).length;
   }
 
-  function markdownNodes(source) {
-    const fragment = document.createDocumentFragment();
-    const lines = source.replaceAll("\r\n", "\n").split("\n");
-    let lineIndex = 0;
-    let paragraph = [];
-
-    function flushParagraph() {
-      if (!paragraph.length) {
-        return;
+  function boundedText(value, limit) {
+    const points = [];
+    let truncated = false;
+    for (const point of value) {
+      if (points.length >= limit) {
+        truncated = true;
+        break;
       }
-      const node = document.createElement("p");
-      appendInline(node, paragraph.join(" "));
-      fragment.append(node);
-      paragraph = [];
+      points.push(point);
     }
+    return {text: points.join(""), count: points.length, truncated};
+  }
 
-    while (lineIndex < lines.length) {
-      const line = lines[lineIndex];
-      if (line.startsWith("```")) {
-        flushParagraph();
-        const codeLines = [];
-        lineIndex += 1;
-        while (lineIndex < lines.length && !lines[lineIndex].startsWith("```")) {
-          codeLines.push(lines[lineIndex]);
-          lineIndex += 1;
-        }
-        const pre = document.createElement("pre");
-        const code = document.createElement("code");
-        code.textContent = codeLines.join("\n");
-        pre.append(code);
-        fragment.append(pre);
-      } else {
-        const heading = /^(#{1,3})\s+(.+)$/.exec(line);
-        const listItem = /^(\s*)([-*]|\d+\.)\s+(.+)$/.exec(line);
-        if (heading) {
-          flushParagraph();
-          const node = document.createElement(`h${heading[1].length}`);
-          appendInline(node, heading[2]);
-          fragment.append(node);
-        } else if (listItem) {
-          flushParagraph();
-          const ordered = listItem[2].endsWith(".");
-          const list = document.createElement(ordered ? "ol" : "ul");
-          while (lineIndex < lines.length) {
-            const item = /^(\s*)([-*]|\d+\.)\s+(.+)$/.exec(lines[lineIndex]);
-            if (!item || item[2].endsWith(".") !== ordered) {
-              break;
-            }
-            const listNode = document.createElement("li");
-            appendInline(listNode, item[3]);
-            list.append(listNode);
-            lineIndex += 1;
-          }
-          fragment.append(list);
-          continue;
-        } else if (line.trim()) {
-          paragraph.push(line.trim());
-        } else {
-          flushParagraph();
-        }
-      }
-      lineIndex += 1;
-    }
-    flushParagraph();
-    return fragment;
+  function announce(message) {
+    elements.liveStatus.textContent = message;
+  }
+
+  function showLocalError(message) {
+    appendMessage("system", message, {error: true});
+    announce(`Error: ${message}`);
   }
 
   function renderBody(body, content, streaming) {
@@ -199,6 +125,19 @@
     }
   }
 
+  function trimTimeline(protectedArticle) {
+    while (elements.timeline.childElementCount > MAX_TIMELINE_MESSAGES) {
+      const activeArticle = state.activeAssistant ? state.activeAssistant.article : null;
+      const removable = Array.from(elements.timeline.children).find(
+        (node) => node !== activeArticle && node !== protectedArticle,
+      );
+      if (!removable) {
+        return;
+      }
+      elements.timeline.removeChild(removable);
+    }
+  }
+
   function appendMessage(role, content, options = {}) {
     const article = document.createElement("article");
     const meta = document.createElement("div");
@@ -210,8 +149,9 @@
     renderBody(body, content, Boolean(options.streaming));
     article.append(meta, body);
     elements.timeline.append(article);
+    trimTimeline(article);
     elements.timeline.scrollTop = elements.timeline.scrollHeight;
-    return {article, body, content};
+    return {article, body, content, codePointCount: codePointLength(content), truncated: false};
   }
 
   function appendTrace(direction, event) {
@@ -222,7 +162,9 @@
     directionNode.className = "trace-event__direction";
     directionNode.textContent = direction;
     payload.className = "trace-event__payload";
-    payload.textContent = JSON.stringify(event, null, 2);
+    const serialized = JSON.stringify(event, null, 2);
+    const bounded = boundedText(serialized, MAX_TRACE_CODE_POINTS);
+    payload.textContent = bounded.text + (bounded.truncated ? TRACE_TRUNCATED_NOTICE : "");
     item.append(directionNode, payload);
     elements.trace.append(item);
     while (elements.trace.childElementCount > MAX_TRACE_EVENTS) {
@@ -231,8 +173,62 @@
     elements.trace.scrollTop = elements.trace.scrollHeight;
   }
 
+  function assistantDisplayContent() {
+    if (!state.activeAssistant) {
+      return "";
+    }
+    return state.activeAssistant.content
+      + (state.activeAssistant.truncated ? RESPONSE_TRUNCATED_NOTICE : "");
+  }
+
+  function renderActiveAssistant(streaming) {
+    if (!state.activeAssistant) {
+      return;
+    }
+    renderBody(state.activeAssistant.body, assistantDisplayContent(), streaming);
+    elements.timeline.scrollTop = elements.timeline.scrollHeight;
+  }
+
+  function cancelScheduledRender() {
+    if (state.renderFrameId !== null) {
+      window.cancelAnimationFrame(state.renderFrameId);
+      state.renderFrameId = null;
+    }
+  }
+
+  function scheduleAssistantRender() {
+    if (state.renderFrameId !== null) {
+      return;
+    }
+    state.renderFrameId = window.requestAnimationFrame(() => {
+      state.renderFrameId = null;
+      renderActiveAssistant(true);
+    });
+  }
+
+  function appendAssistantDelta(delta) {
+    if (!state.activeAssistant || state.activeAssistant.truncated) {
+      return;
+    }
+    const remaining = MAX_RESPONSE_CODE_POINTS - state.activeAssistant.codePointCount;
+    const bounded = boundedText(delta, remaining);
+    state.activeAssistant.content += bounded.text;
+    state.activeAssistant.codePointCount += bounded.count;
+    state.activeAssistant.truncated = bounded.truncated;
+  }
+
+  function replaceAssistantContent(content) {
+    if (!state.activeAssistant) {
+      return;
+    }
+    const bounded = boundedText(content, MAX_RESPONSE_CODE_POINTS);
+    state.activeAssistant.content = bounded.text;
+    state.activeAssistant.codePointCount = bounded.count;
+    state.activeAssistant.truncated = bounded.truncated;
+  }
+
   function updateControls() {
-    const hasContent = elements.input.value.trim().length > 0;
+    const hasContent = codePointLength(elements.input.value.trim()) > 0;
     const ready = state.connection === "ready";
     const label = state.phase === "pending" ? "Waiting"
       : state.phase === "streaming" ? "Stop"
@@ -243,9 +239,11 @@
       ? true
       : state.phase === "streaming" ? !state.activeResponseId : !ready || !hasContent;
     elements.input.disabled = state.phase !== "idle";
+    elements.clearDisplay.disabled = state.phase !== "idle";
   }
 
   function resetRequestState() {
+    cancelScheduledRender();
     state.phase = "idle";
     state.pendingMessageId = null;
     state.activeResponseId = null;
@@ -253,9 +251,8 @@
   }
 
   function finishGeneration(label, error = false) {
-    if (state.activeAssistant) {
-      renderBody(state.activeAssistant.body, state.activeAssistant.content, false);
-    }
+    cancelScheduledRender();
+    renderActiveAssistant(false);
     resetRequestState();
     if (label) {
       appendMessage("system", label, {error});
@@ -264,20 +261,33 @@
     elements.input.focus();
   }
 
+  function applyReadyLimits(data) {
+    state.maxMessageLength = Number.isInteger(data.max_message_length) && data.max_message_length > 0
+      ? data.max_message_length : DEFAULT_MAX_MESSAGE_LENGTH;
+    state.maxFrameBytes = Number.isInteger(data.max_websocket_message_bytes)
+      && data.max_websocket_message_bytes > 0
+      ? data.max_websocket_message_bytes : DEFAULT_MAX_FRAME_BYTES;
+    const count = codePointLength(elements.input.value);
+    elements.count.textContent = `${count} / ${state.maxMessageLength}`;
+    elements.hint.textContent = `Enter to send · Shift + Enter for line break · Limit ${state.maxMessageLength}`;
+  }
+
   function matchesActiveResponse(data) {
     return typeof data.response_id === "string" && data.response_id === state.activeResponseId;
   }
 
   function handleEvent(event) {
     if (!event || typeof event !== "object" || typeof event.type !== "string") {
-      appendMessage("system", "Ignored malformed server event.", {error: true});
+      showLocalError("Ignored malformed server event.");
       return;
     }
     const data = event.data && typeof event.data === "object" ? event.data : {};
     if (event.type === "conversation.ready") {
       state.reconnectAttempts = 0;
+      applyReadyLimits(data);
       elements.model.textContent = typeof data.model === "string" ? data.model : "configured runtime";
       setStatus("Ready", "ready");
+      announce("Conversation ready.");
     } else if (event.type === "response.started") {
       if (state.phase !== "pending" || data.message_id !== state.pendingMessageId) {
         return;
@@ -292,17 +302,18 @@
       updateControls();
     } else if (event.type === "response.delta" && matchesActiveResponse(data) && state.activeAssistant) {
       if (typeof data.delta === "string") {
-        state.activeAssistant.content += data.delta;
-        renderBody(state.activeAssistant.body, state.activeAssistant.content, true);
-        elements.timeline.scrollTop = elements.timeline.scrollHeight;
+        appendAssistantDelta(data.delta);
+        scheduleAssistantRender();
       }
     } else if (event.type === "response.completed" && matchesActiveResponse(data)) {
       if (state.activeAssistant && typeof data.content === "string") {
-        state.activeAssistant.content = data.content;
+        replaceAssistantContent(data.content);
       }
       finishGeneration("");
+      announce("Response completed.");
     } else if (event.type === "response.cancelled" && matchesActiveResponse(data)) {
       finishGeneration("Generation stopped.");
+      announce("Response stopped.");
     } else if (event.type === "error") {
       const message = typeof data.message === "string" ? data.message : "The request could not be completed.";
       const matchesPendingError = state.phase === "pending" && data.message_id === state.pendingMessageId;
@@ -312,6 +323,7 @@
       } else {
         appendMessage("system", message, {error: true});
       }
+      announce(`Error: ${message}`);
     }
   }
 
@@ -327,11 +339,14 @@
     const socket = new WebSocket(socketUrl());
     state.socket = socket;
     socket.addEventListener("message", (message) => {
+      if (state.socket !== socket) {
+        return;
+      }
       let event;
       try {
         event = JSON.parse(message.data);
       } catch (_error) {
-        appendMessage("system", "Received an unreadable server event.", {error: true});
+        showLocalError("Received an unreadable server event.");
         return;
       }
       appendTrace("RX", event);
@@ -344,6 +359,7 @@
       state.socket = null;
       if (state.phase !== "idle") {
         finishGeneration("Connection closed; the last message was not replayed.", true);
+        announce("Error: Connection closed; the last message was not replayed.");
       } else {
         resetRequestState();
       }
@@ -352,7 +368,7 @@
       }
       if (state.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
         setStatus("Offline", "error");
-        appendMessage("system", "Reconnect limit reached. Start a new session to retry.", {error: true});
+        showLocalError("Reconnect limit reached. Start a new session to retry.");
         return;
       }
       state.reconnectAttempts += 1;
@@ -360,16 +376,22 @@
       setStatus(`Retry ${state.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`, "connecting");
       state.reconnectTimer = window.setTimeout(connect, delay);
     });
-    socket.addEventListener("error", () => setStatus("Link error", "error"));
+    socket.addEventListener("error", () => {
+      if (state.socket !== socket) {
+        return;
+      }
+      setStatus("Link error", "error");
+      announce("Error: WebSocket link error.");
+    });
   }
 
-  function sendEvent(event) {
+  function sendEvent(event, serialized = JSON.stringify(event)) {
     if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
-      appendMessage("system", "Connection is not ready.", {error: true});
+      showLocalError("Connection is not ready.");
       return false;
     }
     appendTrace("TX", event);
-    state.socket.send(JSON.stringify(event));
+    state.socket.send(serialized);
     return true;
   }
 
@@ -389,18 +411,28 @@
       return;
     }
     const content = elements.input.value.trim();
-    if (!content || content.length > MAX_MESSAGE_LENGTH || state.connection !== "ready") {
+    const contentLength = codePointLength(content);
+    if (!content || state.connection !== "ready") {
+      return;
+    }
+    if (contentLength > state.maxMessageLength) {
+      showLocalError(`Message exceeds the ${state.maxMessageLength} code point limit.`);
       return;
     }
     state.messageSequence += 1;
     const messageId = `msg_${randomToken()}_${state.messageSequence}`.slice(0, 128);
     const event = {type: "message.create", data: {message_id: messageId, content}};
-    if (sendEvent(event)) {
+    const serialized = JSON.stringify(event);
+    if (new TextEncoder().encode(serialized).byteLength > state.maxFrameBytes) {
+      showLocalError(`Message frame exceeds the ${state.maxFrameBytes} byte limit.`);
+      return;
+    }
+    if (sendEvent(event, serialized)) {
       state.pendingMessageId = messageId;
       state.phase = "pending";
       appendMessage("user", content);
       elements.input.value = "";
-      elements.count.textContent = `0 / ${MAX_MESSAGE_LENGTH}`;
+      elements.count.textContent = `0 / ${state.maxMessageLength}`;
       updateControls();
     }
   }
@@ -410,7 +442,7 @@
     submitMessage();
   });
   elements.input.addEventListener("input", () => {
-    elements.count.textContent = `${elements.input.value.length} / ${MAX_MESSAGE_LENGTH}`;
+    elements.count.textContent = `${codePointLength(elements.input.value)} / ${state.maxMessageLength}`;
     updateControls();
   });
   elements.input.addEventListener("keydown", (event) => {
@@ -440,6 +472,9 @@
     connect();
   });
   elements.clearDisplay.addEventListener("click", () => {
+    if (state.phase !== "idle") {
+      return;
+    }
     while (elements.timeline.firstChild) {
       elements.timeline.removeChild(elements.timeline.firstChild);
     }

@@ -10,6 +10,9 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
+from starlette.responses import Response
 
 from somai_chat.agent.graph import build_conversation_graph
 from somai_chat.api.health import router as health_router
@@ -21,6 +24,22 @@ from somai_chat.providers.llm import create_chat_model
 
 logger = logging.getLogger(__name__)
 WEB_DIRECTORY = Path(__file__).with_name("web")
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; "
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Set browser security policy and prevent stale console assets."""
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        if request.url.path == "/" or request.url.path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 async def _close_resource(resource: object | None) -> None:
@@ -72,6 +91,7 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
     application.state.settings = settings
     application.state.runtime = runtime
     application.state.ready = settings is not None and runtime is not None
+    application.add_middleware(SecurityHeadersMiddleware)
     application.include_router(health_router)
     application.include_router(websocket_router)
     application.mount("/assets", StaticFiles(directory=WEB_DIRECTORY), name="assets")

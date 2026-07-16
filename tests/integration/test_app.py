@@ -140,7 +140,12 @@ def test_websocket_streams_uniform_ordered_response() -> None:
         events = [socket.receive_json() for _ in range(4)]
 
     assert ready["type"] == "conversation.ready"
-    assert ready["data"] == {"conversation_id": "conv_test", "model": "test-model"}
+    assert ready["data"] == {
+        "conversation_id": "conv_test",
+        "max_message_length": 8000,
+        "max_websocket_message_bytes": 32768,
+        "model": "test-model",
+    }
     assert [event["type"] for event in events] == [
         "response.started",
         "response.delta",
