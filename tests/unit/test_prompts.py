@@ -24,7 +24,9 @@ def test_prompt_defines_embodied_and_safety_boundaries() -> None:
 
 
 def test_prompt_separates_stable_identity_from_runtime_capabilities() -> None:
-    assert "当前可用能力：文本多轮对话" in RUNTIME_CAPABILITIES
+    assert "当前可用能力：文本多轮对话、当前天气查询" in RUNTIME_CAPABILITIES
+    assert "未指定地点时默认查询武汉" in RUNTIME_CAPABILITIES
+    assert "必须调用天气工具" in RUNTIME_CAPABILITIES
     assert "没有视觉、位置、设备状态或动作工具" in RUNTIME_CAPABILITIES
     assert SOMAI_SYSTEM_PROMPT == f"{SOMAI_IDENTITY}\n\n{RUNTIME_CAPABILITIES}"
     assert "{user" not in SOMAI_SYSTEM_PROMPT

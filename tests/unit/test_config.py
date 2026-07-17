@@ -131,6 +131,18 @@ def test_settings_reject_empty_or_blank_model(model: str) -> None:
         Settings(openai_api_key="secret", openai_model=model)
 
 
+def test_settings_configures_qweather_weather_service() -> None:
+    settings = Settings(
+        openai_api_key=SecretStr("test-key"),
+        openai_model="test-model",
+        qweather_api_host="https://example.qweatherapi.com",
+        qweather_api_key=SecretStr("weather-key"),
+    )
+
+    assert str(settings.qweather_api_host) == "https://example.qweatherapi.com/"
+    assert settings.qweather_api_key.get_secret_value() == "weather-key"
+
+
 def test_get_settings_loads_prefixed_environment_and_caches(monkeypatch: pytest.MonkeyPatch) -> None:
     get_settings.cache_clear()
     monkeypatch.setenv("SOMAI_OPENAI_API_KEY", "environment-secret")

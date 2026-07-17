@@ -13,7 +13,8 @@
 
 ## 核心接口
 
-`build_conversation_graph(model, checkpointer=None)` 创建 `START -> model -> END` 对话图，
+`build_conversation_graph(model, checkpointer=None, tools=())` 在无工具时创建 `START -> model -> END` 对话图；
+传入工具时创建 `START -> model -> tools -> model` 条件循环，
 并返回只公开 `ainvoke`、`astream` 和 `aget_state` 的 `ConversationGraph`。
 调用方必须在 Graph 配置中传入非空 `thread_id`；
 系统将 `conversation_id` 原样映射为该值。
@@ -24,7 +25,8 @@
 Facade 在委托 LangGraph 前校验 `thread_id`，无效配置不会产生 Checkpoint。
 它按 `thread_id` 锁定完整调用，同一会话的多轮调用串行执行，不同会话可并行。
 模型节点临时在完整会话历史前加入一条 SOMAI 系统消息，异步调用模型，
-并把返回的 AI 消息写回状态。
+并把返回的 AI 消息写回状态。若模型请求已注册工具，图进入 `ToolNode` 执行工具，并将工具结果作为消息回送模型；
+否则结束本轮。
 系统消息不写入 Checkpointer，因此不会随轮次持久化或重复累积。
 一轮生成取消时，LangGraph 可能已保存本轮用户输入，
 但未完成的 AI 流式片段不会作为完整消息写入状态。
@@ -40,10 +42,10 @@ MVP 的状态和并发保护仅存在于单个进程内，进程重启后丢失�
 
 ## 扩展方式与注意事项
 
-当前运行时能力只有文本多轮对话。
+当前运行时支持文本多轮对话和由组合根注入的受控工具。
 未来接入视觉、设备或动作能力时，应扩展运行时能力清单和明确的工具节点，
 不修改稳定人格，
 也不得在未接入能力时声称已经感知或执行。
 新增工具节点需保持消息状态和 `thread_id` 隔离语义，并补充真实图测试。
-当前没有工具、动作、ASR 或 TTS 节点；这些能力不得仅通过 Prompt 宣称存在。持久化扩展应替换
+当前没有动作、ASR 或 TTS 节点；这些能力不得仅通过 Prompt 宣称存在。持久化扩展应替换
 `build_conversation_graph` 的 Checkpointer 注入，同时把跨进程并发控制迁移到共享基础设施。

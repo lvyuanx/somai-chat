@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     model_temperature: float = Field(default=0.4, ge=0, le=2)
     model_max_tokens: int = Field(default=800, gt=0)
     model_timeout_seconds: float = Field(default=30, gt=0)
+    qweather_api_host: AnyHttpUrl | None = None
+    qweather_api_key: SecretStr | None = None
+    weather_timeout_seconds: float = Field(default=5, gt=0)
     max_message_length: int = Field(default=8000, gt=0)
     max_websocket_message_bytes: int = Field(default=32768, gt=0)
     websocket_transport_max_bytes: int = Field(default=1048576, gt=0)
@@ -80,6 +83,16 @@ class Settings(BaseSettings):
             secret = secret.strip()
             if not secret:
                 raise ValueError("OpenAI API key must not be empty")
+        return secret
+
+    @field_validator("qweather_api_key", mode="before")
+    @classmethod
+    def validate_qweather_api_key(cls, value: object) -> object:
+        secret = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if isinstance(secret, str):
+            secret = secret.strip()
+            if not secret:
+                raise ValueError("QWeather API key must not be empty")
         return secret
 
     @field_validator("openai_model", mode="before")

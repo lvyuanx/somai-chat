@@ -49,6 +49,9 @@ make dev
 | `SOMAI_MODEL_TEMPERATURE` | `0.4` | 生成温度，范围 0–2 |
 | `SOMAI_MODEL_MAX_TOKENS` | `800` | 最大输出 token 数 |
 | `SOMAI_MODEL_TIMEOUT_SECONDS` | `30` | 单次模型请求超时秒数 |
+| `SOMAI_QWEATHER_API_HOST` | 必填 | 和风天气控制台提供的专属 API Host |
+| `SOMAI_QWEATHER_API_KEY` | 必填 | 和风天气项目 API Key；使用 `SecretStr`，不得写入日志 |
+| `SOMAI_WEATHER_TIMEOUT_SECONDS` | `5` | 单次和风天气请求超时秒数 |
 | `SOMAI_MAX_MESSAGE_LENGTH` | `8000` | 用户消息 Unicode code point 上限 |
 | `SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES` | `32768` | 应用解析前文本 UTF-8 字节上限；超限返回 `INVALID_MESSAGE`，连接继续 |
 | `SOMAI_WEBSOCKET_TRANSPORT_MAX_BYTES` | `1048576` | Uvicorn 紧急帧硬上限；不得小于应用上限，超限以 1009 关闭 |

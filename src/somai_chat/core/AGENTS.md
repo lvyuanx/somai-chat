@@ -55,7 +55,7 @@
 ## 配置说明
 
 必填项为 OpenAI 兼容 API Key 与模型名称，两者都会去除首尾空白并拒绝空值。
-服务监听地址/端口、基础 URL、生成参数、消息字符数、WebSocket 原始文本字节数
+服务监听地址/端口、模型基础 URL、和风天气专属 API Host、天气服务超时、生成参数、消息字符数、WebSocket 原始文本字节数
 及允许来源均在此集中定义。
 `max_websocket_message_bytes` 默认 32768，是应用解析前可恢复阈值；
 `websocket_transport_max_bytes` 默认 1048576，是 Uvicorn 紧急硬上限，必须为正且不小于应用阈值。

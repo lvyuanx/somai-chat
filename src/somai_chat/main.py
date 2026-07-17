@@ -9,6 +9,7 @@ from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import httpx
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -24,6 +25,8 @@ from somai_chat.application.conversation import ConversationRuntime
 from somai_chat.core.config import Settings, get_settings
 from somai_chat.core.logging import configure_logging
 from somai_chat.providers.llm import create_chat_model, is_model_provider_unavailable
+from somai_chat.weather.client import QWeatherClient
+from somai_chat.weather.tool import create_weather_tool
 
 logger = logging.getLogger(__name__)
 WEB_DIRECTORY = Path(__file__).with_name("web")
@@ -91,7 +94,7 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        owned_resource: object | None = None
+        owned_resources: list[object] = []
         resolved_settings = settings
         resolved_runtime = runtime
         try:
@@ -100,9 +103,17 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
             configure_logging(resolved_settings.log_level)
             if resolved_runtime is None:
                 model = create_chat_model(resolved_settings)
-                owned_resource = model
+                if resolved_settings.qweather_api_host is None or resolved_settings.qweather_api_key is None:
+                    raise ValueError("QWeather configuration is required")
+                weather_http_client = httpx.AsyncClient(timeout=resolved_settings.weather_timeout_seconds)
+                weather_client = QWeatherClient(
+                    weather_http_client,
+                    api_host=str(resolved_settings.qweather_api_host),
+                    api_key=resolved_settings.qweather_api_key.get_secret_value(),
+                )
+                owned_resources.extend([model, weather_http_client])
                 resolved_runtime = ConversationRuntime(
-                    build_conversation_graph(model),
+                    build_conversation_graph(model, tools=[create_weather_tool(weather_client)]),
                     model_unavailable_classifier=is_model_provider_unavailable,
                 )
             application.state.settings = resolved_settings
@@ -118,7 +129,8 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
             yield
         finally:
             try:
-                await _close_resource(owned_resource)
+                for resource in reversed(owned_resources):
+                    await _close_resource(resource)
             except Exception:
                 logger.error("application resource shutdown failed")
             application.state.ready = False

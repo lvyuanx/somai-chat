@@ -6,9 +6,10 @@ from typing import Any
 import pytest
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import BaseTool, tool
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import PrivateAttr
 
@@ -65,6 +66,33 @@ class ConcurrencyTrackingChatModel(RecordingChatModel):
             return self._generate(messages)
         finally:
             self._active_calls -= 1
+
+
+class WeatherToolCallingChatModel(RecordingChatModel):
+    _tools: list[BaseTool] = PrivateAttr(default_factory=list)
+
+    def bind_tools(self, tools: list[BaseTool], **kwargs: Any) -> WeatherToolCallingChatModel:
+        del kwargs
+        self._tools = tools
+        return self
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del stop, run_manager, kwargs
+        self._calls.append(list(messages))
+        if any(isinstance(message, ToolMessage) for message in messages):
+            reply = AIMessage(content="武汉今天晴朗。")
+        else:
+            reply = AIMessage(
+                content="",
+                tool_calls=[{"name": "get_weather", "args": {}, "id": "weather-call"}],
+            )
+        return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
 def graph_config(thread_id: str) -> RunnableConfig:
@@ -210,3 +238,17 @@ async def test_concurrent_threads_do_not_mix_history() -> None:
     assert [message.content for message in state_a.values["messages"]] == ["A消息", "回复：A消息"]
     assert [message.content for message in state_b.values["messages"]] == ["B消息", "回复：B消息"]
     assert model.max_active_calls > 1
+
+
+@pytest.mark.asyncio
+async def test_graph_runs_requested_weather_tool_before_final_response() -> None:
+    @tool
+    async def get_weather() -> dict[str, str]:
+        """查询武汉当前天气。"""
+        return {"location": "武汉", "condition": "晴"}
+
+    graph = build_conversation_graph(WeatherToolCallingChatModel(), tools=[get_weather])
+    result = await graph.ainvoke(user_input("今天天气怎么样？"), config=graph_config("conversation-a"))
+
+    assert result["messages"][-1].content == "武汉今天晴朗。"
+    assert any(isinstance(message, ToolMessage) for message in result["messages"])
