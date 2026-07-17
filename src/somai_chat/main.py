@@ -25,6 +25,7 @@ from somai_chat.application.conversation import ConversationRuntime
 from somai_chat.core.config import Settings, get_settings
 from somai_chat.core.logging import configure_logging
 from somai_chat.providers.llm import create_chat_model, is_model_provider_unavailable
+from somai_chat.time.tool import create_time_tool
 from somai_chat.weather.client import QWeatherClient
 from somai_chat.weather.tool import create_weather_tool
 
@@ -113,7 +114,10 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
                 )
                 owned_resources.extend([model, weather_http_client])
                 resolved_runtime = ConversationRuntime(
-                    build_conversation_graph(model, tools=[create_weather_tool(weather_client)]),
+                    build_conversation_graph(
+                        model,
+                        tools=[create_weather_tool(weather_client), create_time_tool()],
+                    ),
                     model_unavailable_classifier=is_model_provider_unavailable,
                 )
             application.state.settings = resolved_settings
