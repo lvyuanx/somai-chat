@@ -114,6 +114,14 @@ def test_console_styles_cover_responsive_accessible_streaming_states() -> None:
     assert ".streaming-cursor" in css
     assert "--signal-orange" in css
     assert "--success-green" in css
+    assert "--surface-base: #0d1523" in css
+    assert "--surface-raised: #162238" in css
+    assert "--accent-blue: #1f75fe" in css
+    assert "border-radius: 14px" in css
+    assert ".conversation-panel" in css
+    assert "grid-template-rows: auto minmax(0, 1fr) auto" in css
+    assert ".message-timeline" in css and "overflow-y: auto" in css
+    assert "min-height: 0" in css
     assert ".visually-hidden" in css
     mobile = responsive[responsive.index("@media (max-width: 850px)") :]
     assert "grid-template-rows: auto minmax(0, 1fr)" in mobile
