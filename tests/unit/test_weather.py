@@ -82,7 +82,8 @@ async def test_weather_client_uses_wuhan_when_city_is_not_provided() -> None:
 
 
 @pytest.mark.asyncio
-async def test_weather_client_returns_requested_forecast_day() -> None:
+@pytest.mark.parametrize("date_text", ["明天", "2026年7月18日"])
+async def test_weather_client_returns_requested_forecast_day(date_text: str) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/geo/v2/city/lookup":
             return httpx.Response(
@@ -114,7 +115,7 @@ async def test_weather_client_returns_requested_forecast_day() -> None:
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
         client = QWeatherClient(http_client, api_host="https://example.qweatherapi.com", api_key="weather-key")
-        weather = await client.get_weather("北京", "明天", today=date(2026, 7, 17))
+        weather = await client.get_weather("北京", date_text, today=date(2026, 7, 17))
 
     assert weather == {
         "location": "北京, 北京",
