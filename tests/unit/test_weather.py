@@ -101,7 +101,13 @@ async def test_weather_client_returns_requested_forecast_day(date_text: str) -> 
             json={
                 "code": "200",
                 "daily": [
-                    {"fxDate": "2026-07-17", "tempMin": "26", "tempMax": "33", "textDay": "晴", "windSpeedDay": "8"},
+                    {
+                        "fxDate": "2026-07-17",
+                        "tempMin": "26",
+                        "tempMax": "33",
+                        "textDay": "晴",
+                        "windSpeedDay": "8",
+                    },
                     {
                         "fxDate": "2026-07-18",
                         "tempMin": "25",

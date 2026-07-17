@@ -20,7 +20,9 @@ def create_weather_tool(weather_client: WeatherClient) -> BaseTool:
     """Create a weather tool that keeps third-party failure details private."""
 
     @tool
-    async def get_weather(city: str | None = None, date: str | None = None) -> Mapping[str, WeatherValue]:
+    async def get_weather(
+        city: str | None = None, date: str | None = None
+    ) -> Mapping[str, WeatherValue]:
         """查询指定城市在今天或指定日期的天气。未提供城市时，默认查询武汉。"""
         try:
             return await weather_client.get_weather(city, date)
