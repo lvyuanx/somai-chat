@@ -172,6 +172,7 @@ def test_console_message_send_enters_pending_synchronously() -> None:
     transition = re.compile(
         r"if \(sendEvent\(event, serialized\)\) \{\s*"
         r"state\.pendingMessageId = messageId;\s*"
+        r"state\.requestStartedAt = Date\.now\(\);\s*"
         r'state\.phase = "pending";',
     )
     assert transition.search(javascript)
