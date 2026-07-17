@@ -1,7 +1,13 @@
 import {markdownNodes} from "./markdown.js";
 
+const FOLLOW_THRESHOLD_PX = 48;
+
 export function codePointLength(value) {
   return Array.from(value).length;
+}
+
+function shouldFollowTimeline(timeline) {
+  return timeline.scrollHeight - timeline.clientHeight - timeline.scrollTop <= FOLLOW_THRESHOLD_PX;
 }
 
 function boundedText(value, limit) {
@@ -50,6 +56,7 @@ export function createConsoleView({document, window, elements, limits}) {
   }
 
   function appendMessage(role, content, options = {}) {
+    const shouldFollow = shouldFollowTimeline(elements.timeline);
     const article = document.createElement("article");
     const meta = document.createElement("div");
     const body = document.createElement("div");
@@ -61,7 +68,9 @@ export function createConsoleView({document, window, elements, limits}) {
     article.append(meta, body);
     elements.timeline.append(article);
     trimTimeline(article);
-    elements.timeline.scrollTop = elements.timeline.scrollHeight;
+    if (shouldFollow) {
+      elements.timeline.scrollTop = elements.timeline.scrollHeight;
+    }
     return {article, body, content, codePointCount: codePointLength(content), truncated: false};
   }
 
@@ -94,8 +103,11 @@ export function createConsoleView({document, window, elements, limits}) {
     if (!activeAssistant) {
       return;
     }
+    const shouldFollow = shouldFollowTimeline(elements.timeline);
     renderBody(activeAssistant.body, displayContent(), streaming);
-    elements.timeline.scrollTop = elements.timeline.scrollHeight;
+    if (shouldFollow) {
+      elements.timeline.scrollTop = elements.timeline.scrollHeight;
+    }
   }
 
   function cancelScheduledRender() {

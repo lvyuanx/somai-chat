@@ -15,6 +15,8 @@ class Node {
     this._text = "";
     this.attributes = new Map();
     this.scrollTop = 0;
+    this.clientHeight = 0;
+    this._scrollHeight = null;
   }
 
   get textContent() {
@@ -39,7 +41,11 @@ class Node {
   }
 
   get scrollHeight() {
-    return this.children.length;
+    return this._scrollHeight ?? this.children.length;
+  }
+
+  set scrollHeight(value) {
+    this._scrollHeight = value;
   }
 
   append(...nodes) {
@@ -98,6 +104,17 @@ const view = createConsoleView({
   limits: {responseCodePoints: 5, timelineMessages: 3, traceEvents: 2, traceCodePoints: 20},
 });
 
+elements.timeline.clientHeight = 100;
+elements.timeline.scrollHeight = 200;
+elements.timeline.scrollTop = 52;
+view.appendMessage("system", "follow-me");
+assert(elements.timeline.scrollTop === elements.timeline.scrollHeight, "near-bottom reader did not follow");
+
+elements.timeline.scrollHeight = 400;
+elements.timeline.scrollTop = 120;
+view.appendMessage("system", "keep-reading");
+assert(elements.timeline.scrollTop === 120, "history reader was pulled to the bottom");
+
 for (let index = 0; index < 4; index += 1) {
   view.appendMessage("system", `message-${index}`);
 }
@@ -108,12 +125,15 @@ const assistant = elements.timeline.children.at(-1);
 view.appendMessage("system", "one");
 view.appendMessage("system", "two");
 assert(elements.timeline.children.includes(assistant), "active assistant was removed by timeline trimming");
+elements.timeline.scrollHeight = 400;
+elements.timeline.scrollTop = 120;
 view.appendAssistantDelta("abc");
 view.appendAssistantDelta("def");
 assert(frames.size === 1, "assistant deltas scheduled more than one frame");
 const [[pendingId, render]] = frames.entries();
 frames.delete(pendingId);
 render();
+assert(elements.timeline.scrollTop === 120, "streaming output pulled a history reader to the bottom");
 assert(assistant.textContent.includes("abcde"), "assistant display did not retain the bounded response");
 assert(assistant.textContent.includes("truncated"), "assistant display omitted its truncation marker");
 
