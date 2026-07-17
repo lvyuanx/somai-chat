@@ -259,6 +259,12 @@ h1 {
 .message__body > :last-child {
   margin-bottom: 0;
 }
+.message__timing {
+  grid-column: 2;
+  margin-top: 8px;
+  color: var(--ink-muted);
+  font: 0.66rem/1.4 var(--mono);
+}
 .message--user {
   margin-left: auto;
   padding: 17px 18px;

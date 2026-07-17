@@ -120,8 +120,13 @@ for (let index = 0; index < 4; index += 1) {
 }
 assert(elements.timeline.childElementCount === 3, "timeline limit was not enforced");
 
-view.startAssistant();
+view.startAssistant({requestStartedAt: 1000});
 const assistant = elements.timeline.children.at(-1);
+assert(assistant.textContent.includes("First token: --"), "assistant timing metadata was not initialized");
+assert(assistant.textContent.includes("Total: 0.00s"), "assistant total timing was not initialized");
+view.updateAssistantTiming({now: 1250, firstTokenAt: 1200});
+assert(assistant.textContent.includes("First token: 0.20s"), "assistant first token timing was not rendered");
+assert(assistant.textContent.includes("Total: 0.25s"), "assistant total timing was not rendered");
 view.appendMessage("system", "one");
 view.appendMessage("system", "two");
 assert(elements.timeline.children.includes(assistant), "active assistant was removed by timeline trimming");

@@ -15,10 +15,12 @@
 ## 目录说明与核心类
 
 - `conversation.py`：包含 `ConversationRuntime` 与 `ConversationSession`。
+- `text_normalizer.py`：将模型文本规范化为可直接由端侧 TTS 播放的纯文本。
 - `__init__.py`：包标识，不创建运行时全局单例。
 
 `ConversationRuntime` 负责一轮生成和事件翻译；
 `ConversationSession` 是每个 WebSocket 连接独有的控制器。
+`TextNormalizer` 在 Runtime 发出流式文本前移除 Markdown 表现标记，并将常见天气单位转换为自然中文。
 
 ## 核心接口与主要流程
 
@@ -53,6 +55,8 @@ close 已开始后到达的 cancel 返回 `CANCEL_NOT_FOUND`，不得取得 owne
 本模块依赖 Agent 的 `ConversationGraph`、API 的 `ServerEvent` 和 Core 的错误契约；供应商分类能力仅以 callback 注入。
 API 层注入异步发送回调；用户输入进入 Graph，
 Graph 消息块转换为协议事件后经回调返回客户端。
+每个 AI 文本块先经过 `TextNormalizer`，因此 `response.delta` 和由其汇总的
+`response.completed.content` 均可直接用于端侧 TTS。
 
 ## 扩展方式与注意事项
 

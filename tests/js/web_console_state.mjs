@@ -176,8 +176,11 @@ const document = new FakeDocument();
 const stored = new Map();
 const windowListeners = new Map();
 const rafCallbacks = new Map();
+const intervals = new Map();
 let rafSequence = 0;
+let intervalSequence = 0;
 let uuidSequence = 0;
+let now = 1000;
 
 const windowObject = {
   location: {protocol: "http:", host: "console.test"},
@@ -199,6 +202,14 @@ const windowObject = {
     return 1;
   },
   clearTimeout() {},
+  setInterval(callback) {
+    intervalSequence += 1;
+    intervals.set(intervalSequence, callback);
+    return intervalSequence;
+  },
+  clearInterval(identifier) {
+    intervals.delete(identifier);
+  },
   requestAnimationFrame(callback) {
     rafSequence += 1;
     rafCallbacks.set(rafSequence, callback);
@@ -217,6 +228,7 @@ globalThis.window = windowObject;
 globalThis.WebSocket = FakeWebSocket;
 globalThis.requestAnimationFrame = windowObject.requestAnimationFrame;
 globalThis.cancelAnimationFrame = windowObject.cancelAnimationFrame;
+globalThis.Date.now = () => now;
 
 const appPath = resolve("src/somai_chat/web/app.js");
 await import(`${pathToFileURL(appPath).href}?state-test=1`);
@@ -285,6 +297,21 @@ socket.emit("message", {
 });
 assert(button.textContent === "Stop" && !button.disabled, "matching started did not begin streaming");
 assert(clear.disabled, "clear must stay disabled while streaming");
+assert(intervals.size === 1, "active response timing did not start a refresh interval");
+const timedAssistant = timeline.children.find((node) => node.className.includes("message--assistant"));
+assert(timedAssistant.textContent.includes("First token: --"), "response timing was not shown on the active reply");
+now = 1234;
+socket.emit("message", {
+  type: "response.delta",
+  data: {response_id: "resp_active", delta: "x"},
+});
+assert(timedAssistant.textContent.includes("First token: 0.23s"), "first token timing did not use request send time");
+assert(timedAssistant.textContent.includes("Total: 0.23s"), "total timing did not update on the active reply");
+now = 1750;
+for (const refreshTiming of intervals.values()) {
+  refreshTiming();
+}
+assert(timedAssistant.textContent.includes("Total: 0.75s"), "total timing did not refresh without a delta");
 const timelineBeforeClear = timeline.childElementCount;
 clear.emit("click");
 assert(timeline.childElementCount === timelineBeforeClear, "clear removed an active response");
@@ -326,6 +353,7 @@ socket.emit("message", {type: "response.completed", data: {response_id: "resp_la
 assert(button.textContent === "Stopping", "mismatched completed ended the active request");
 socket.emit("message", {type: "response.cancelled", data: {response_id: "resp_active"}});
 assert(!input.disabled && !clear.disabled, "terminal event did not restore idle controls");
+assert(intervals.size === 0, "terminal event did not stop the timing refresh interval");
 assert(liveStatus.textContent.includes("stopped"), "terminal status was not announced");
 
 input.value = "b";

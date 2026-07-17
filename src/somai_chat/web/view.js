@@ -23,6 +23,10 @@ function boundedText(value, limit) {
   return {text: points.join(""), count: points.length, truncated};
 }
 
+function formatDuration(milliseconds) {
+  return `${(Math.max(0, milliseconds) / 1000).toFixed(2)}s`;
+}
+
 export function createConsoleView({document, window, elements, limits}) {
   const responseNotice = "\n\n[Response truncated at the local display limit.]";
   const traceNotice = "\n… [trace truncated]";
@@ -72,6 +76,13 @@ export function createConsoleView({document, window, elements, limits}) {
       elements.timeline.scrollTop = elements.timeline.scrollHeight;
     }
     return {article, body, content, codePointCount: codePointLength(content), truncated: false};
+  }
+
+  function createAssistantTiming() {
+    const timing = document.createElement("div");
+    timing.className = "message__timing";
+    timing.setAttribute("aria-label", "Response timing");
+    return timing;
   }
 
   function appendTrace(direction, event) {
@@ -127,8 +138,28 @@ export function createConsoleView({document, window, elements, limits}) {
     });
   }
 
-  function startAssistant() {
+  function startAssistant({requestStartedAt} = {}) {
     activeAssistant = appendMessage("assistant", "", {streaming: true});
+    activeAssistant.requestStartedAt = Number.isFinite(requestStartedAt) ? requestStartedAt : 0;
+    activeAssistant.firstTokenAt = null;
+    activeAssistant.timing = createAssistantTiming();
+    activeAssistant.article.append(activeAssistant.timing);
+    updateAssistantTiming({now: activeAssistant.requestStartedAt});
+  }
+
+  function updateAssistantTiming({now, firstTokenAt} = {}) {
+    if (!activeAssistant) {
+      return;
+    }
+    if (Number.isFinite(firstTokenAt) && activeAssistant.firstTokenAt === null) {
+      activeAssistant.firstTokenAt = firstTokenAt;
+    }
+    const currentTime = Number.isFinite(now) ? now : activeAssistant.requestStartedAt;
+    const total = formatDuration(currentTime - activeAssistant.requestStartedAt);
+    const firstToken = activeAssistant.firstTokenAt === null
+      ? "--"
+      : formatDuration(activeAssistant.firstTokenAt - activeAssistant.requestStartedAt);
+    activeAssistant.timing.textContent = `First token: ${firstToken} | Total: ${total}`;
   }
 
   function appendAssistantDelta(delta) {
@@ -187,5 +218,6 @@ export function createConsoleView({document, window, elements, limits}) {
     finishAssistant,
     replaceAssistantContent,
     startAssistant,
+    updateAssistantTiming,
   };
 }

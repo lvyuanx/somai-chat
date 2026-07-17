@@ -5,6 +5,7 @@ import {codePointLength, createConsoleView} from "./view.js";
   const DEFAULT_MAX_MESSAGE_LENGTH = 8000;
   const DEFAULT_MAX_FRAME_BYTES = 32768;
   const MAX_RECONNECT_ATTEMPTS = 5;
+  const TIMING_REFRESH_MS = 100;
   const CONVERSATION_PATTERN = /^conv_[A-Za-z0-9_-]{1,123}$/;
   const STORAGE_KEY = "somai.conversation_id";
   const elements = {
@@ -37,6 +38,9 @@ import {codePointLength, createConsoleView} from "./view.js";
     phase: "idle",
     pendingMessageId: null,
     activeResponseId: null,
+    requestStartedAt: null,
+    firstTokenAt: null,
+    timingTimer: null,
     reconnectAttempts: 0,
     reconnectTimer: null,
     intentionalClose: false,
@@ -105,13 +109,18 @@ import {codePointLength, createConsoleView} from "./view.js";
   }
 
   function resetRequestState() {
+    stopTimingUpdates();
     view.discardAssistant();
     state.phase = "idle";
     state.pendingMessageId = null;
     state.activeResponseId = null;
+    state.requestStartedAt = null;
+    state.firstTokenAt = null;
   }
 
   function finishGeneration(label, error = false) {
+    updateAssistantTiming();
+    stopTimingUpdates();
     view.finishAssistant();
     resetRequestState();
     if (label) {
@@ -119,6 +128,33 @@ import {codePointLength, createConsoleView} from "./view.js";
     }
     updateControls();
     elements.input.focus();
+  }
+
+  function updateAssistantTiming() {
+    if (state.requestStartedAt === null) {
+      return;
+    }
+    view.updateAssistantTiming({now: Date.now(), firstTokenAt: state.firstTokenAt});
+  }
+
+  function startTimingUpdates() {
+    stopTimingUpdates();
+    updateAssistantTiming();
+    state.timingTimer = window.setInterval(updateAssistantTiming, TIMING_REFRESH_MS);
+  }
+
+  function stopTimingUpdates() {
+    if (state.timingTimer !== null) {
+      window.clearInterval(state.timingTimer);
+      state.timingTimer = null;
+    }
+  }
+
+  function recordFirstToken() {
+    if (state.firstTokenAt === null) {
+      state.firstTokenAt = Date.now();
+    }
+    updateAssistantTiming();
   }
 
   function applyReadyLimits(data) {
@@ -158,14 +194,21 @@ import {codePointLength, createConsoleView} from "./view.js";
       state.pendingMessageId = null;
       state.activeResponseId = data.response_id;
       state.phase = "streaming";
-      view.startAssistant();
+      view.startAssistant({requestStartedAt: state.requestStartedAt});
+      startTimingUpdates();
       updateControls();
     } else if (event.type === "response.delta" && matchesActiveResponse(data)) {
       if (typeof data.delta === "string") {
+        if (data.delta) {
+          recordFirstToken();
+        }
         view.appendAssistantDelta(data.delta);
       }
     } else if (event.type === "response.completed" && matchesActiveResponse(data)) {
       if (typeof data.content === "string") {
+        if (data.content) {
+          recordFirstToken();
+        }
         view.replaceAssistantContent(data.content);
       }
       finishGeneration("");
@@ -288,6 +331,7 @@ import {codePointLength, createConsoleView} from "./view.js";
     }
     if (sendEvent(event, serialized)) {
       state.pendingMessageId = messageId;
+      state.requestStartedAt = Date.now();
       state.phase = "pending";
       view.appendMessage("user", content);
       elements.input.value = "";

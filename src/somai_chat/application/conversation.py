@@ -14,6 +14,7 @@ from pydantic import JsonValue
 
 from somai_chat.agent.graph import ConversationGraph
 from somai_chat.api.protocol import ServerEvent
+from somai_chat.application.text_normalizer import TextNormalizer
 from somai_chat.core.errors import ErrorCode, SomaiError
 
 SendEvent = Callable[[ServerEvent], Awaitable[None]]
@@ -93,6 +94,7 @@ class ConversationRuntime:
     ) -> None:
         self._graph = graph
         self._model_unavailable_classifier = model_unavailable_classifier
+        self._text_normalizer = TextNormalizer()
 
     async def stream(
         self,
@@ -123,7 +125,7 @@ class ConversationRuntime:
                 async for message, _metadata in graph_stream:
                     if not isinstance(message, AIMessageChunk):
                         continue
-                    delta = _chunk_text(message)
+                    delta = self._text_normalizer.normalize_delta(_chunk_text(message))
                     if delta:
                         complete_content.append(delta)
                         yield ServerEvent.create(
