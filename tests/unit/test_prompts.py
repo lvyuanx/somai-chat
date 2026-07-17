@@ -25,6 +25,8 @@ def test_prompt_defines_embodied_and_safety_boundaries() -> None:
 
 
 def test_prompt_separates_stable_identity_from_runtime_capabilities() -> None:
+    assert "中国标准时间" in RUNTIME_CAPABILITIES
+    assert "必须调用时间工具" in RUNTIME_CAPABILITIES
     assert "当前天气和指定日期的天气预报查询" in RUNTIME_CAPABILITIES
     assert "昨天、今天、明天" in RUNTIME_CAPABILITIES
     assert "具体日期" in RUNTIME_CAPABILITIES
