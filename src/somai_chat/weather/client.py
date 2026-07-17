@@ -1,11 +1,17 @@
 """QWeather service adapter."""
 
+import re
 from collections.abc import Mapping
+from datetime import date, timedelta
 
 import httpx
 
 DEFAULT_CITY = "武汉"
 type WeatherValue = str | float
+
+
+class WeatherDateUnavailableError(ValueError):
+    """Raised when a requested date is outside the available weather data window."""
 
 
 class QWeatherClient:
@@ -37,6 +43,49 @@ class QWeatherClient:
             "condition": self._required_text(current, "text"),
             "wind_speed_kmh": self._required_number(current, "windSpeed"),
         }
+
+    async def get_weather(
+        self,
+        city: str | None = None,
+        date_text: str | None = None,
+        *,
+        today: date | None = None,
+    ) -> dict[str, WeatherValue]:
+        """Return current or forecast weather for the requested date."""
+        current_day = today or date.today()
+        target_day = self._parse_date(date_text, current_day)
+        if target_day < current_day:
+            raise WeatherDateUnavailableError("Requested date is in the past")
+        if target_day == current_day:
+            return await self.get_current_weather(city)
+        return await self._get_forecast_weather(city, target_day)
+
+    async def _get_forecast_weather(self, city: str | None, target_day: date) -> dict[str, WeatherValue]:
+        resolved_city = city.strip() if city is not None else ""
+        location = await self._lookup_city(resolved_city or DEFAULT_CITY)
+        response = await self._http_client.get(
+            f"{self._api_host}/v7/weather/3d",
+            params={"location": self._required_text(location, "id"), "lang": "zh", "unit": "m"},
+            headers=self._headers,
+        )
+        response.raise_for_status()
+        payload = self._successful_payload(response.json())
+        daily = payload.get("daily")
+        if not isinstance(daily, list):
+            raise ValueError("Weather service returned no forecast conditions")
+        target_date = target_day.isoformat()
+        for item in daily:
+            forecast = self._mapping(item, "Weather service returned invalid forecast data")
+            if forecast.get("fxDate") == target_date:
+                return {
+                    "location": self._location_label(location),
+                    "forecast_date": target_date,
+                    "minimum_temperature_celsius": self._required_number(forecast, "tempMin"),
+                    "maximum_temperature_celsius": self._required_number(forecast, "tempMax"),
+                    "condition_day": self._required_text(forecast, "textDay"),
+                    "wind_speed_kmh": self._required_number(forecast, "windSpeedDay"),
+                }
+        raise WeatherDateUnavailableError("Requested date is outside the forecast response")
 
     async def _lookup_city(self, city: str) -> Mapping[str, object]:
         response = await self._http_client.get(
@@ -88,3 +137,23 @@ class QWeatherClient:
         name = QWeatherClient._required_text(location, "name")
         province = location.get("adm1")
         return f"{name}, {province}" if isinstance(province, str) and province else name
+
+    @staticmethod
+    def _parse_date(date_text: str | None, today: date) -> date:
+        normalized = date_text.strip() if date_text is not None else ""
+        relative_dates = {
+            "昨天": today - timedelta(days=1),
+            "今天": today,
+            "明天": today + timedelta(days=1),
+        }
+        if not normalized:
+            return today
+        if normalized in relative_dates:
+            return relative_dates[normalized]
+        match = re.fullmatch(r"(\d{4})年(\d{1,2})月(\d{1,2})日", normalized)
+        if match is None:
+            raise WeatherDateUnavailableError("Requested date is invalid")
+        try:
+            return date(*(int(value) for value in match.groups()))
+        except ValueError as error:
+            raise WeatherDateUnavailableError("Requested date is invalid") from error

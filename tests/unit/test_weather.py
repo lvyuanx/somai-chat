@@ -1,3 +1,5 @@
+from datetime import date
+
 import httpx
 import pytest
 
@@ -77,6 +79,45 @@ async def test_weather_client_uses_wuhan_when_city_is_not_provided() -> None:
         weather = await client.get_current_weather()
 
     assert weather["location"] == "武汉, 湖北"
+
+
+@pytest.mark.asyncio
+async def test_weather_client_returns_requested_forecast_day() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/geo/v2/city/lookup":
+            return httpx.Response(
+                200,
+                json={
+                    "code": "200",
+                    "location": [{"name": "北京", "adm1": "北京", "id": "101010100"}],
+                },
+            )
+        assert request.url.path == "/v7/weather/3d"
+        assert request.url.params["location"] == "101010100"
+        assert request.url.params["lang"] == "zh"
+        return httpx.Response(
+            200,
+            json={
+                "code": "200",
+                "daily": [
+                    {"fxDate": "2026-07-17", "tempMin": "26", "tempMax": "33", "textDay": "晴", "windSpeedDay": "8"},
+                    {"fxDate": "2026-07-18", "tempMin": "25", "tempMax": "31", "textDay": "多云", "windSpeedDay": "10"},
+                ],
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = QWeatherClient(http_client, api_host="https://example.qweatherapi.com", api_key="weather-key")
+        weather = await client.get_weather("北京", "明天", today=date(2026, 7, 17))
+
+    assert weather == {
+        "location": "北京, 北京",
+        "forecast_date": "2026-07-18",
+        "minimum_temperature_celsius": 25.0,
+        "maximum_temperature_celsius": 31.0,
+        "condition_day": "多云",
+        "wind_speed_kmh": 10.0,
+    }
 
 
 @pytest.mark.asyncio
