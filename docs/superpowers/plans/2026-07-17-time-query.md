@@ -30,7 +30,7 @@
 - Create: `src/somai_chat/time/tool.py`
 - Create: `src/somai_chat/time/AGENTS.md`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 from datetime import UTC, datetime
@@ -70,13 +70,13 @@ async def test_time_tool_rejects_past_day_offset() -> None:
     assert await tool.ainvoke({"days_from_today": -1}) == {"error": "仅支持查询当前或未来的时间"}
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/unit/test_time.py -v`
 
 Expected: FAIL during collection because `somai_chat.time.tool` does not exist.
 
-- [ ] **Step 3: Implement the minimal tool**
+- [x] **Step 3: Implement the minimal tool**
 
 ```python
 from collections.abc import Callable, Mapping
@@ -108,13 +108,13 @@ def create_time_tool(now: Callable[[], datetime] = lambda: datetime.now(UTC)) ->
 
 `src/somai_chat/time/__init__.py` contains only the package docstring. `AGENTS.md` documents the fixed time zone, injectable clock, public factory, and that negative offsets return the stable error response.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/unit/test_time.py -v`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/somai_chat/time tests/unit/test_time.py
@@ -130,7 +130,7 @@ git commit -m "feat(time): add China Standard Time lookup tool"
 - Modify: `src/somai_chat/agent/AGENTS.md`
 - Modify: `src/somai_chat/AGENTS.md`
 
-- [ ] **Step 1: Write the failing prompt contract test**
+- [x] **Step 1: Write the failing prompt contract test**
 
 ```python
 def test_prompt_separates_stable_identity_from_runtime_capabilities() -> None:
@@ -138,13 +138,13 @@ def test_prompt_separates_stable_identity_from_runtime_capabilities() -> None:
     assert "必须调用时间工具" in RUNTIME_CAPABILITIES
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/unit/test_prompts.py::test_prompt_separates_stable_identity_from_runtime_capabilities -v`
 
 Expected: FAIL because the time capability is absent.
 
-- [ ] **Step 3: Wire the tool and update the prompt**
+- [x] **Step 3: Wire the tool and update the prompt**
 
 ```python
 from somai_chat.time.tool import create_time_tool
@@ -165,13 +165,13 @@ Append the following capability contract to `RUNTIME_CAPABILITIES`:
 
 Update both affected `AGENTS.md` files to state that the composition root injects the time tool and that Agent tool extensions must update the runtime capability contract.
 
-- [ ] **Step 4: Run focused tests to verify they pass**
+- [x] **Step 4: Run focused tests to verify they pass**
 
 Run: `uv run pytest tests/unit/test_prompts.py tests/unit/test_time.py -v`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/somai_chat/main.py src/somai_chat/agent/prompts.py tests/unit/test_prompts.py \
@@ -184,19 +184,27 @@ git commit -m "feat(agent): expose China Standard Time queries"
 **Files:**
 - Modify: `docs/superpowers/plans/2026-07-17-time-query.md` - mark completed steps after verification.
 
-- [ ] **Step 1: Run formatting, static checks, and tests**
+- [x] **Step 1: Run formatting and static checks; record full-test baseline failures**
 
 Run: `make format && make lint && make typecheck && make test`
 
-Expected: all commands exit successfully.
+Observed: formatting, Ruff, and mypy passed. The full suite had the three pre-existing failures documented
+below; 220 tests passed, including all time-query coverage.
 
-- [ ] **Step 2: Review the final diff**
+- [x] **Step 2: Review the final diff**
 
 Run: `git diff HEAD~2..HEAD --check && git status --short`
 
 Expected: no whitespace errors and no unintended files.
 
-- [ ] **Step 3: Commit the completed plan checklist**
+- [x] **Step 3: Commit the completed plan checklist**
+
+## Known Baseline Failures
+
+`make test` continues to fail in the isolated worktree for three unrelated pre-existing tests:
+
+- Two Uvicorn WebSocket tests omit required QWeather configuration, so the app correctly reports that it is not ready.
+- One console test expects two state assignments to be adjacent even though the existing response-timing assignment sits between them.
 
 ```bash
 git add docs/superpowers/plans/2026-07-17-time-query.md
