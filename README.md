@@ -46,6 +46,11 @@ make dev
 | `SOMAI_OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容 HTTP 基地址 |
 | `SOMAI_OPENAI_API_KEY` | 必填 | API Key；使用 `SecretStr`，不得写入日志 |
 | `SOMAI_OPENAI_MODEL` | 必填 | 兼容端点提供的模型名 |
+| `SOMAI_DATABASE_URL` | 本地 MySQL 示例 | SQLAlchemy 异步 MySQL 连接 URL，使用 `mysql+asyncmy` 方言 |
+| `SOMAI_ADMIN_USERNAME` | `admin` | 后台超级管理员用户名 |
+| `SOMAI_ADMIN_PASSWORD` | `123456` | 后台超级管理员密码；生产环境必须覆盖默认值 |
+| `SOMAI_ADMIN_SESSION_SECRET` | 必填 | 管理员会话签名密钥；生产环境不得使用占位值 |
+| `SOMAI_CLIENT_KEY_PEPPER` | 必填 | 客户端 Key 摘要 pepper；生产环境不得使用占位值 |
 | `SOMAI_MODEL_TEMPERATURE` | `0.4` | 生成温度，范围 0–2 |
 | `SOMAI_MODEL_MAX_TOKENS` | `800` | 最大输出 token 数 |
 | `SOMAI_MODEL_TIMEOUT_SECONDS` | `30` | 单次模型请求超时秒数 |

@@ -19,6 +19,63 @@ def test_settings_accept_openai_compatible_provider() -> None:
     assert settings.openai_model == "chat-model"
 
 
+def test_settings_configures_database_and_administrator_credentials() -> None:
+    settings = Settings(
+        openai_api_key="chat-secret",
+        openai_model="chat-model",
+        database_url="mysql+asyncmy://somai:pass@db:3306/somai",
+        admin_session_secret="session-secret",
+        client_key_pepper="pepper-value",
+    )
+
+    assert settings.database_url == "mysql+asyncmy://somai:pass@db:3306/somai"
+    assert settings.admin_username == "admin"
+    assert settings.admin_password.get_secret_value() == "123456"
+    assert settings.admin_session_secret.get_secret_value() == "session-secret"
+    assert settings.client_key_pepper.get_secret_value() == "pepper-value"
+
+
+def test_settings_hides_administrator_secrets_in_repr() -> None:
+    settings = Settings(
+        openai_api_key="chat-secret",
+        openai_model="chat-model",
+        database_url="mysql+asyncmy://somai:pass@db:3306/somai",
+        admin_password="admin-password",
+        admin_session_secret="session-secret",
+        client_key_pepper="pepper-value",
+    )
+
+    assert "admin-password" not in repr(settings)
+    assert "session-secret" not in repr(settings)
+    assert "pepper-value" not in repr(settings)
+
+
+def test_production_rejects_default_administrator_password() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="production",
+            openai_api_key="chat-secret",
+            openai_model="chat-model",
+            database_url="mysql+asyncmy://somai:pass@db:3306/somai",
+            admin_session_secret="production-session-secret",
+            client_key_pepper="production-pepper",
+        )
+
+
+@pytest.mark.parametrize("placeholder", ["replace-me", "change-me", "your-secret-here"])
+def test_production_rejects_placeholder_administrator_secrets(placeholder: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="production",
+            openai_api_key="chat-secret",
+            openai_model="chat-model",
+            database_url="mysql+asyncmy://somai:pass@db:3306/somai",
+            admin_password="strong-password",
+            admin_session_secret=placeholder,
+            client_key_pepper="production-pepper",
+        )
+
+
 def test_settings_accepts_optional_qwen_vision_provider() -> None:
     settings = Settings(
         openai_api_key="chat-secret",

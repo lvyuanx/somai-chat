@@ -8,6 +8,7 @@ from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_valida
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _HOST_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+_PRODUCTION_PLACEHOLDER_MARKERS = ("replace", "change-me", "your-secret", "placeholder")
 
 
 def _normalize_host(value: str) -> str:
@@ -64,6 +65,11 @@ class Settings(BaseSettings):
     openai_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
     openai_api_key: SecretStr
     openai_model: str = Field(min_length=1)
+    database_url: str = Field(default="mysql+asyncmy://somai:change-me@127.0.0.1:3306/somai", min_length=1)
+    admin_username: str = Field(default="admin", min_length=1)
+    admin_password: SecretStr = SecretStr("123456")
+    admin_session_secret: SecretStr = SecretStr("change-me")
+    client_key_pepper: SecretStr = SecretStr("change-me")
     model_temperature: float = Field(default=0.4, ge=0, le=2)
     model_max_tokens: int = Field(default=800, gt=0)
     model_timeout_seconds: float = Field(default=30, gt=0)
@@ -89,6 +95,16 @@ class Settings(BaseSettings):
             secret = secret.strip()
             if not secret:
                 raise ValueError("OpenAI API key must not be empty")
+        return secret
+
+    @field_validator("admin_password", "admin_session_secret", "client_key_pepper", mode="before")
+    @classmethod
+    def validate_administrator_secret(cls, value: object) -> object:
+        secret = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if isinstance(secret, str):
+            secret = secret.strip()
+            if not secret:
+                raise ValueError("Administrator secret must not be empty")
         return secret
 
     @field_validator("qweather_api_key", mode="before")
@@ -147,7 +163,22 @@ class Settings(BaseSettings):
         vision_incomplete = any(value is None for value in vision_configuration)
         if vision_configured and vision_incomplete:
             raise ValueError("Vision endpoint, API key, and model must be configured together")
+        if self.environment == "production":
+            administrator_secrets = (
+                self.admin_password.get_secret_value(),
+                self.admin_session_secret.get_secret_value(),
+                self.client_key_pepper.get_secret_value(),
+            )
+            if self.admin_password.get_secret_value() == "123456":
+                raise ValueError("Production administrator password must not use the default value")
+            if any(_is_placeholder_secret(secret) for secret in administrator_secrets):
+                raise ValueError("Production administrator secrets must not use placeholder values")
         return self
+
+
+def _is_placeholder_secret(value: str) -> bool:
+    normalized = value.strip().lower()
+    return any(marker in normalized for marker in _PRODUCTION_PLACEHOLDER_MARKERS)
 
 
 @lru_cache

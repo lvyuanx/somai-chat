@@ -9,6 +9,8 @@ description = "SOMAI embodied conversational agent runtime"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "alembic>=1.14,<2",
+  "asyncmy>=0.2,<1",
   "fastapi>=0.115,<1",
   "langchain>=1,<2",
   "langchain-openai>=1,<2",
@@ -16,6 +18,7 @@ dependencies = [
   "httpx>=0.28,<1",
   "openai>=2,<3",
   "pydantic-settings>=2.7,<3",
+  "sqlalchemy>=2.0,<3",
   "uvicorn[standard]>=0.34,<1",
 ]
 
