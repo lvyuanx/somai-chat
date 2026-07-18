@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     openai_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
     openai_api_key: SecretStr
     openai_model: str = Field(min_length=1)
-    database_url: str = Field(default="mysql+asyncmy://somai:change-me@127.0.0.1:3306/somai", min_length=1)
+    database_url: SecretStr = SecretStr("mysql+asyncmy://somai:change-me@127.0.0.1:3306/somai")
     admin_username: str = Field(default="admin", min_length=1)
     admin_password: SecretStr = SecretStr("123456")
     admin_session_secret: SecretStr = SecretStr("change-me")
@@ -106,6 +106,17 @@ class Settings(BaseSettings):
             if not secret:
                 raise ValueError("Administrator secret must not be empty")
         return secret
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def validate_database_url(cls, value: object) -> object:
+        database_url = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if not isinstance(database_url, str) or not database_url.strip():
+            raise ValueError("Database URL must not be empty")
+        parsed = urlsplit(database_url)
+        if parsed.scheme != "mysql+asyncmy" or parsed.hostname is None or parsed.path in {"", "/"}:
+            raise ValueError("Database URL must use mysql+asyncmy and include a database")
+        return database_url
 
     @field_validator("qweather_api_key", mode="before")
     @classmethod
@@ -164,6 +175,7 @@ class Settings(BaseSettings):
         if vision_configured and vision_incomplete:
             raise ValueError("Vision endpoint, API key, and model must be configured together")
         if self.environment == "production":
+            database_url = self.database_url.get_secret_value()
             administrator_secrets = (
                 self.admin_password.get_secret_value(),
                 self.admin_session_secret.get_secret_value(),
@@ -173,6 +185,8 @@ class Settings(BaseSettings):
                 raise ValueError("Production administrator password must not use the default value")
             if any(_is_placeholder_secret(secret) for secret in administrator_secrets):
                 raise ValueError("Production administrator secrets must not use placeholder values")
+            if _is_placeholder_secret(database_url):
+                raise ValueError("Production database URL must not use placeholder values")
         return self
 
 
