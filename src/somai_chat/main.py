@@ -12,13 +12,17 @@ from urllib.parse import urlsplit
 import httpx
 import uvicorn
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from somai_chat.admin.database import create_session_factory
+from somai_chat.admin.repository import ClientRepository
 from somai_chat.agent.graph import build_conversation_graph
+from somai_chat.api.admin import router as admin_router
 from somai_chat.api.health import router as health_router
 from somai_chat.api.websocket import router as websocket_router
 from somai_chat.application.conversation import ConversationRuntime
@@ -33,6 +37,7 @@ from somai_chat.weather.tool import create_weather_tool
 
 logger = logging.getLogger(__name__)
 WEB_DIRECTORY = Path(__file__).with_name("web")
+ADMIN_WEB_DIRECTORY = Path(__file__).with_name("admin_web")
 _CSP_DOMAIN = re.compile(r"^[A-Za-z0-9.-]+$")
 
 
@@ -104,6 +109,11 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
             if resolved_settings is None:
                 resolved_settings = get_settings()
             configure_logging(resolved_settings.log_level)
+            database_engine, sessions = create_session_factory(resolved_settings.database_url.get_secret_value())
+            owned_resources.append(database_engine)
+            application.state.client_repository = ClientRepository(
+                sessions, resolved_settings.client_key_pepper.get_secret_value()
+            )
             if resolved_runtime is None:
                 model = create_chat_model(resolved_settings)
                 if resolved_settings.qweather_api_host is None or resolved_settings.qweather_api_key is None:
@@ -137,7 +147,7 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
         except Exception:
             configure_logging("INFO")
             logger.error("application dependencies unavailable")
-            application.state.settings = None
+            application.state.settings = resolved_settings
             application.state.runtime = None
             application.state.ready = False
         try:
@@ -154,10 +164,27 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
     application.state.settings = settings
     application.state.runtime = runtime
     application.state.ready = settings is not None and runtime is not None
+    application.state.client_repository = None
+    application.add_middleware(
+        SessionMiddleware,
+        secret_key=(settings.admin_session_secret.get_secret_value() if settings is not None else "change-me"),
+        https_only=settings is not None and settings.environment == "production",
+        same_site="lax",
+    )
     application.add_middleware(SecurityHeadersMiddleware)
+    application.include_router(admin_router)
     application.include_router(health_router)
     application.include_router(websocket_router)
     application.mount("/assets", StaticFiles(directory=WEB_DIRECTORY), name="assets")
+    application.mount("/admin-assets", StaticFiles(directory=ADMIN_WEB_DIRECTORY), name="admin-assets")
+
+    @application.get("/", include_in_schema=False)
+    async def root() -> RedirectResponse:
+        return RedirectResponse("/admin")
+
+    @application.get("/admin", include_in_schema=False, response_class=FileResponse)
+    async def admin_console() -> FileResponse:
+        return FileResponse(ADMIN_WEB_DIRECTORY / "index.html")
 
     @application.get("/", include_in_schema=False, response_class=FileResponse)
     async def debug_console() -> FileResponse:

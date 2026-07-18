@@ -55,6 +55,7 @@ class FailingRuntime:
 
 def make_client(runtime: object) -> TestClient:
     settings = Settings(
+        environment="test",
         openai_api_key="test-api-key",
         openai_model="test-model",
         allowed_origins=["https://allowed.example"],

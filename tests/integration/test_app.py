@@ -73,6 +73,7 @@ class FailingRuntime:
 
 def make_test_settings() -> Settings:
     return Settings(
+        environment="test",
         openai_api_key=SecretStr("test-secret"),
         openai_model="test-model",
         allowed_origins=["https://allowed.example"],
@@ -191,6 +192,7 @@ def test_raw_text_byte_limit_accepts_boundary_and_rejects_one_more_byte() -> Non
         separators=(",", ":"),
     )
     settings = Settings(
+        environment="test",
         openai_api_key="secret",
         openai_model="model",
         max_websocket_message_bytes=len(payload.encode("utf-8")),
@@ -224,6 +226,7 @@ def test_raw_text_byte_limit_accepts_boundary_and_rejects_one_more_byte() -> Non
 )
 def test_json_value_errors_map_to_invalid_message_and_connection_recovers(payload: str) -> None:
     settings = Settings(
+        environment="test",
         openai_api_key="secret",
         openai_model="model",
         max_websocket_message_bytes=10000,

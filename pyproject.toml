@@ -17,6 +17,7 @@ dependencies = [
   "langchain-openai>=1,<2",
   "langgraph>=1,<2",
   "httpx>=0.28,<1",
+  "itsdangerous>=2.2,<3",
   "openai>=2,<3",
   "pydantic-settings>=2.7,<3",
   "sqlalchemy>=2.0,<3",
