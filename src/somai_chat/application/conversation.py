@@ -1,7 +1,7 @@
 """Translate graph streams into protocol events and control one connection."""
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Protocol, cast
@@ -16,6 +16,7 @@ from somai_chat.agent.graph import ConversationGraph
 from somai_chat.api.protocol import ServerEvent
 from somai_chat.application.text_normalizer import TextNormalizer
 from somai_chat.core.errors import ErrorCode, SomaiError
+from somai_chat.vision.analyzer import ImageAnalyzer
 
 SendEvent = Callable[[ServerEvent], Awaitable[None]]
 ModelUnavailableClassifier = Callable[[BaseException], bool]
@@ -91,9 +92,11 @@ class ConversationRuntime:
         self,
         graph: ConversationGraph,
         model_unavailable_classifier: ModelUnavailableClassifier = _never_model_unavailable,
+        image_analyzer: ImageAnalyzer | None = None,
     ) -> None:
         self._graph = graph
         self._model_unavailable_classifier = model_unavailable_classifier
+        self._image_analyzer = image_analyzer
         self._text_normalizer = TextNormalizer()
 
     async def stream(
@@ -102,6 +105,7 @@ class ConversationRuntime:
         message_id: str,
         content: str,
         *,
+        image_urls: Sequence[str] = (),
         response_id: str | None = None,
     ) -> AsyncIterator[ServerEvent]:
         response_id = response_id or f"resp_{uuid4().hex}"
@@ -113,10 +117,16 @@ class ConversationRuntime:
         usage: UsageMetadata | None = None
         config: RunnableConfig = {"configurable": {"thread_id": conversation_id}}
         try:
+            enriched_content = content
+            if image_urls:
+                if self._image_analyzer is None:
+                    raise SomaiError(ErrorCode.MODEL_UNAVAILABLE, "Model provider is unavailable")
+                observation = await self._image_analyzer.analyze(content, image_urls)
+                enriched_content = f"{content}\n\n{observation}"
             graph_stream = cast(
                 _CloseableAsyncIterator[tuple[object, dict[str, object]]],
                 self._graph.astream(
-                    {"messages": [HumanMessage(content=content)]},
+                    {"messages": [HumanMessage(content=enriched_content)]},
                     config=config,
                     stream_mode="messages",
                 ),
@@ -189,7 +199,7 @@ class ConversationSession:
     def active_response_id(self) -> str | None:
         return self._active.response_id if self._active is not None else None
 
-    def start(self, message_id: str, content: str) -> str:
+    def start(self, message_id: str, content: str, image_urls: Sequence[str] = ()) -> str:
         if self._closed:
             raise SomaiError(ErrorCode.GENERATION_FAILED, "Conversation session is closed")
         if self._active is not None:
@@ -200,7 +210,7 @@ class ConversationSession:
         response_id = f"resp_{uuid4().hex}"
         generation = _Generation(response_id=response_id, message_id=message_id)
         self._active = generation
-        generation.task = asyncio.create_task(self._pump(generation, content))
+        generation.task = asyncio.create_task(self._pump(generation, content, image_urls))
         return response_id
 
     @staticmethod
@@ -274,17 +284,24 @@ class ConversationSession:
         if self._active is generation:
             self._active = None
 
-    async def _pump(self, generation: _Generation, content: str) -> None:
+    async def _pump(self, generation: _Generation, content: str, image_urls: Sequence[str]) -> None:
         try:
-            runtime_stream = cast(
-                _CloseableAsyncIterator[ServerEvent],
-                self._runtime.stream(
+            if image_urls:
+                stream = self._runtime.stream(
+                    self._conversation_id,
+                    generation.message_id,
+                    content,
+                    image_urls=image_urls,
+                    response_id=generation.response_id,
+                )
+            else:
+                stream = self._runtime.stream(
                     self._conversation_id,
                     generation.message_id,
                     content,
                     response_id=generation.response_id,
-                ),
-            )
+                )
+            runtime_stream = cast(_CloseableAsyncIterator[ServerEvent], stream)
             async with _managed_stream(runtime_stream):
                 async for event in runtime_stream:
                     if self._closed:

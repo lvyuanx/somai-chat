@@ -24,8 +24,10 @@ from somai_chat.api.websocket import router as websocket_router
 from somai_chat.application.conversation import ConversationRuntime
 from somai_chat.core.config import Settings, get_settings
 from somai_chat.core.logging import configure_logging
-from somai_chat.providers.llm import create_chat_model, is_model_provider_unavailable
+from somai_chat.providers.llm import create_chat_model, create_vision_model, is_model_provider_unavailable
 from somai_chat.time.tool import create_time_tool
+from somai_chat.vision.analyzer import VisionAnalyzer
+from somai_chat.vision.fetcher import HttpImageFetcher
 from somai_chat.weather.client import QWeatherClient
 from somai_chat.weather.tool import create_weather_tool
 
@@ -113,12 +115,21 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
                     api_key=resolved_settings.qweather_api_key.get_secret_value(),
                 )
                 owned_resources.extend([model, weather_http_client])
+                image_analyzer = None
+                if resolved_settings.vision_model is not None:
+                    vision_http_client = httpx.AsyncClient(timeout=resolved_settings.vision_timeout_seconds)
+                    owned_resources.append(vision_http_client)
+                    image_analyzer = VisionAnalyzer(
+                        HttpImageFetcher(vision_http_client, resolved_settings.max_image_download_bytes),
+                        create_vision_model(resolved_settings),
+                    )
                 resolved_runtime = ConversationRuntime(
                     build_conversation_graph(
                         model,
                         tools=[create_weather_tool(weather_client), create_time_tool()],
                     ),
                     model_unavailable_classifier=is_model_provider_unavailable,
+                    image_analyzer=image_analyzer,
                 )
             application.state.settings = resolved_settings
             application.state.runtime = resolved_runtime

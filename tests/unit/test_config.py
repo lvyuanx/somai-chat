@@ -19,6 +19,36 @@ def test_settings_accept_openai_compatible_provider() -> None:
     assert settings.openai_model == "chat-model"
 
 
+def test_settings_accepts_optional_qwen_vision_provider() -> None:
+    settings = Settings(
+        openai_api_key="chat-secret",
+        openai_model="chat-model",
+        vision_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        vision_api_key="vision-secret",
+        vision_model="qwen3-vl-plus",
+    )
+
+    assert str(settings.vision_base_url).rstrip("/") == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert settings.vision_api_key is not None
+    assert settings.vision_api_key.get_secret_value() == "vision-secret"
+    assert settings.vision_model == "qwen3-vl-plus"
+    assert settings.max_image_urls == 4
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"vision_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"},
+        {"vision_api_key": "vision-secret"},
+        {"vision_model": "qwen3-vl-plus"},
+        {"max_image_urls": 0},
+    ],
+)
+def test_settings_rejects_incomplete_or_invalid_vision_configuration(overrides: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        Settings(openai_api_key="chat-secret", openai_model="chat-model", **overrides)
+
+
 def test_settings_reject_non_positive_message_limit() -> None:
     with pytest.raises(ValidationError):
         Settings(

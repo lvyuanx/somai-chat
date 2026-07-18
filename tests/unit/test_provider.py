@@ -5,7 +5,7 @@ from langchain_openai.chat_models import _client_utils
 from pydantic import SecretStr
 
 from somai_chat.core.config import Settings
-from somai_chat.providers.llm import create_chat_model, is_model_provider_unavailable
+from somai_chat.providers.llm import create_chat_model, create_vision_model, is_model_provider_unavailable
 
 
 @pytest.fixture(autouse=True)
@@ -52,6 +52,22 @@ def test_create_chat_model_does_not_expose_api_key_in_repr() -> None:
 
     assert secret not in repr(model)
     assert secret not in str(model)
+
+
+def test_create_vision_model_uses_independent_qwen_settings() -> None:
+    model = create_vision_model(
+        Settings(
+            openai_api_key="chat-secret",
+            openai_model="chat-model",
+            vision_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            vision_api_key="vision-secret",
+            vision_model="qwen3-vl-plus",
+        )
+    )
+
+    assert model.openai_api_base == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert model.model_name == "qwen3-vl-plus"
+    assert model.streaming is False
 
 
 def test_official_openai_endpoint_requests_stream_usage() -> None:

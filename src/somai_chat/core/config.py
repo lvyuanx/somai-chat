@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     model_temperature: float = Field(default=0.4, ge=0, le=2)
     model_max_tokens: int = Field(default=800, gt=0)
     model_timeout_seconds: float = Field(default=30, gt=0)
+    vision_base_url: AnyHttpUrl | None = None
+    vision_api_key: SecretStr | None = None
+    vision_model: str | None = None
+    vision_timeout_seconds: float = Field(default=30, gt=0)
+    max_image_urls: int = Field(default=4, ge=1, le=4)
+    max_image_download_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
     qweather_api_host: AnyHttpUrl | None = None
     qweather_api_key: SecretStr | None = None
     weather_timeout_seconds: float = Field(default=5, gt=0)
@@ -104,6 +110,29 @@ class Settings(BaseSettings):
                 raise ValueError("OpenAI model must not be empty")
         return value
 
+    @field_validator("vision_api_key", mode="before")
+    @classmethod
+    def validate_vision_api_key(cls, value: object) -> object:
+        if value is None:
+            return None
+        secret = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if isinstance(secret, str):
+            secret = secret.strip()
+            if not secret:
+                raise ValueError("Vision API key must not be empty")
+        return secret
+
+    @field_validator("vision_model", mode="before")
+    @classmethod
+    def validate_vision_model(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                raise ValueError("Vision model must not be empty")
+        return value
+
     @field_validator("allowed_origins")
     @classmethod
     def normalize_allowed_origins(cls, values: list[str]) -> list[str]:
@@ -113,6 +142,11 @@ class Settings(BaseSettings):
     def validate_websocket_limits(self) -> "Settings":
         if self.websocket_transport_max_bytes < self.max_websocket_message_bytes:
             raise ValueError("WebSocket transport limit must be at least the application limit")
+        vision_configuration = (self.vision_base_url, self.vision_api_key, self.vision_model)
+        vision_configured = any(value is not None for value in vision_configuration)
+        vision_incomplete = any(value is None for value in vision_configuration)
+        if vision_configured and vision_incomplete:
+            raise ValueError("Vision endpoint, API key, and model must be configured together")
         return self
 
 

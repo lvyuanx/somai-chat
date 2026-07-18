@@ -60,6 +60,25 @@ class ContentBlockGraph:
         yield AIMessageChunk(content=[{"type": "text", "text": "块"}]), {}
 
 
+class RecordingGraph:
+    def __init__(self) -> None:
+        self.content: str | None = None
+
+    async def astream(self, input: Any, **kwargs: Any) -> AsyncIterator[tuple[AIMessageChunk, dict[str, Any]]]:
+        del kwargs
+        self.content = input["messages"][0].content
+        yield AIMessageChunk(content="已看到"), {}
+
+
+class RecordingImageAnalyzer:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[str, ...]]] = []
+
+    async def analyze(self, content: str, image_urls: tuple[str, ...]) -> str:
+        self.calls.append((content, image_urls))
+        return "[UNTRUSTED_IMAGE_OBSERVATION]\n一只杯子\n[/UNTRUSTED_IMAGE_OBSERVATION]"
+
+
 class FailingGraph:
     async def astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[tuple[AIMessageChunk, dict[str, Any]]]:
         del args, kwargs
@@ -143,6 +162,24 @@ async def test_runtime_extracts_text_from_content_blocks() -> None:
 
     assert [event.data["delta"] for event in events if event.type == "response.delta"] == ["内容", "块"]
     assert events[-1].data["content"] == "内容块"
+
+
+@pytest.mark.asyncio
+async def test_runtime_uses_vision_only_for_image_turns_and_keeps_chat_graph_text_only() -> None:
+    graph = RecordingGraph()
+    analyzer = RecordingImageAnalyzer()
+    runtime = ConversationRuntime(cast(ConversationGraph, graph), image_analyzer=analyzer)
+
+    async for _ in runtime.stream(
+        "conv-1",
+        "msg-1",
+        "图片里是什么？",
+        image_urls=("http://images.example.test/cup.jpg",),
+    ):
+        pass
+
+    assert analyzer.calls == [("图片里是什么？", ("http://images.example.test/cup.jpg",))]
+    assert graph.content == "图片里是什么？\n\n[UNTRUSTED_IMAGE_OBSERVATION]\n一只杯子\n[/UNTRUSTED_IMAGE_OBSERVATION]"
 
 
 @pytest.mark.asyncio

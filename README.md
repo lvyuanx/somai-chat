@@ -49,6 +49,12 @@ make dev
 | `SOMAI_MODEL_TEMPERATURE` | `0.4` | 生成温度，范围 0–2 |
 | `SOMAI_MODEL_MAX_TOKENS` | `800` | 最大输出 token 数 |
 | `SOMAI_MODEL_TIMEOUT_SECONDS` | `30` | 单次模型请求超时秒数 |
+| `SOMAI_VISION_BASE_URL` | DashScope compatible mode | Qwen3-VL OpenAI 兼容 HTTP 基地址；与以下两个字段同时配置才启用视觉能力 |
+| `SOMAI_VISION_API_KEY` | 可选 | DashScope API Key；使用 `SecretStr`，不得写入日志 |
+| `SOMAI_VISION_MODEL` | `qwen3-vl-plus` | 仅携带图片时调用的视觉模型 |
+| `SOMAI_VISION_TIMEOUT_SECONDS` | `30` | 单次视觉模型请求超时秒数 |
+| `SOMAI_MAX_IMAGE_URLS` | `4` | 单条消息可携带的图片 URL 上限 |
+| `SOMAI_MAX_IMAGE_DOWNLOAD_BYTES` | `8388608` | 服务端下载单张图片的字节上限 |
 | `SOMAI_QWEATHER_API_HOST` | 必填 | 和风天气控制台提供的专属 API Host |
 | `SOMAI_QWEATHER_API_KEY` | 必填 | 和风天气项目 API Key；使用 `SecretStr`，不得写入日志 |
 | `SOMAI_WEATHER_TIMEOUT_SECONDS` | `5` | 单次和风天气请求超时秒数 |

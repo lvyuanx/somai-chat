@@ -37,6 +37,40 @@ def test_parse_message_create_strips_content() -> None:
     assert event.data.content == "hello"
 
 
+def test_parse_message_create_accepts_http_and_https_image_urls() -> None:
+    event = parse_client_event(
+        {
+            "type": "message.create",
+            "data": {
+                "message_id": "msg_image",
+                "content": "describe this",
+                "image_urls": ["http://images.example.test/one.jpg", "https://images.example.test/two.png"],
+            },
+        },
+        max_message_length=20,
+    )
+
+    assert isinstance(event, MessageCreate)
+    assert event.data.image_urls == ["http://images.example.test/one.jpg", "https://images.example.test/two.png"]
+
+
+@pytest.mark.parametrize(
+    "image_urls",
+    [[], ["ftp://images.example.test/a.jpg"], ["not-a-url"], ["https://x.test/a"] * 5],
+)
+def test_parse_message_create_rejects_invalid_image_urls(image_urls: list[str]) -> None:
+    with pytest.raises(SomaiError) as exc_info:
+        parse_client_event(
+            {
+                "type": "message.create",
+                "data": {"message_id": "msg_image", "content": "look", "image_urls": image_urls},
+            },
+            max_message_length=20,
+        )
+
+    assert_invalid_client_event(exc_info.value)
+
+
 def test_parse_response_cancel() -> None:
     event = parse_client_event(
         {"type": "response.cancel", "data": {"response_id": "resp_123"}},

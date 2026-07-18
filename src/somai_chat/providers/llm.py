@@ -25,3 +25,16 @@ def create_chat_model(settings: Settings) -> ChatOpenAI:
         streaming=True,
         stream_usage=stream_usage,
     )
+
+
+def create_vision_model(settings: Settings) -> ChatOpenAI:
+    """Build the separately configured, non-streaming vision model."""
+    if settings.vision_base_url is None or settings.vision_api_key is None or settings.vision_model is None:
+        raise ValueError("Vision settings are required")
+    return ChatOpenAI(
+        base_url=str(settings.vision_base_url),
+        api_key=settings.vision_api_key,
+        model=settings.vision_model,
+        timeout=settings.vision_timeout_seconds,
+        streaming=False,
+    )

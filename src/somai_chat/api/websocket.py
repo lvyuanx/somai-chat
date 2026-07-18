@@ -134,10 +134,10 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
                     raise _invalid_message() from None
                 except (ValueError, UnicodeEncodeError, RecursionError):
                     raise _invalid_message() from None
-                event = parse_client_event(payload, settings.max_message_length)
+                event = parse_client_event(payload, settings.max_message_length, settings.max_image_urls)
                 if isinstance(event, MessageCreate):
                     message_id = event.data.message_id
-                    session.start(event.data.message_id, event.data.content)
+                    session.start(event.data.message_id, event.data.content, tuple(event.data.image_urls or ()))
                 elif isinstance(event, ResponseCancel):
                     response_id = event.data.response_id
                     await session.cancel(event.data.response_id)
