@@ -3,7 +3,10 @@
 import hashlib
 import hmac
 import secrets
+from base64 import urlsafe_b64encode
 from dataclasses import dataclass
+
+from cryptography.fernet import Fernet
 
 _KEY_PREFIX = "somai_sk"
 
@@ -28,5 +31,18 @@ def verify_key(key: str, key_id: str, secret_digest: str, pepper: str) -> bool:
     return hmac.compare_digest(_digest(key_id, parts[3], pepper), secret_digest)
 
 
+def encrypt_key(key: str, encryption_secret: str) -> str:
+    return _fernet(encryption_secret).encrypt(key.encode()).decode()
+
+
+def decrypt_key(encrypted_key: str, encryption_secret: str) -> str:
+    return _fernet(encryption_secret).decrypt(encrypted_key.encode()).decode()
+
+
 def _digest(key_id: str, secret: str, pepper: str) -> str:
     return hmac.new(pepper.encode(), f"{key_id}:{secret}".encode(), hashlib.sha256).hexdigest()
+
+
+def _fernet(encryption_secret: str) -> Fernet:
+    key = urlsafe_b64encode(hashlib.sha256(encryption_secret.encode()).digest())
+    return Fernet(key)

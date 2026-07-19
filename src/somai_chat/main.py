@@ -20,6 +20,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from somai_chat.admin.database import create_session_factory
+from somai_chat.admin.presence import ClientPresenceRegistry
 from somai_chat.admin.repository import ClientRepository
 from somai_chat.agent.graph import build_conversation_graph
 from somai_chat.api.admin import router as admin_router
@@ -38,7 +39,7 @@ from somai_chat.weather.tool import create_weather_tool
 
 logger = logging.getLogger(__name__)
 WEB_DIRECTORY = Path(__file__).with_name("web")
-ADMIN_WEB_DIRECTORY = Path(__file__).with_name("admin_web")
+ADMIN_WEB_DIRECTORY = Path(__file__).with_name("admin_web") / "dist"
 _CSP_DOMAIN = re.compile(r"^[A-Za-z0-9.-]+$")
 
 
@@ -115,7 +116,9 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
             database_engine, sessions = create_session_factory(resolved_settings.database_url.get_secret_value())
             owned_resources.append(database_engine)
             application.state.client_repository = ClientRepository(
-                sessions, resolved_settings.client_key_pepper.get_secret_value()
+                sessions,
+                resolved_settings.client_key_pepper.get_secret_value(),
+                resolved_settings.client_key_encryption_secret.get_secret_value(),
             )
             if resolved_runtime is None:
                 model = create_chat_model(resolved_settings)
@@ -168,6 +171,7 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
     application.state.runtime = runtime
     application.state.ready = settings is not None and runtime is not None
     application.state.client_repository = None
+    application.state.client_presence = ClientPresenceRegistry()
     application.add_middleware(
         SessionMiddleware,
         secret_key=(settings.admin_session_secret.get_secret_value() if settings is not None else "change-me"),

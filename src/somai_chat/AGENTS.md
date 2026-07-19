@@ -16,7 +16,8 @@ WebSocket 与包内静态调试台。
 - `time/`：固定为中国标准时间的 LangChain 查询工具。
 - `application/`：一轮流式翻译和单连接生成生命周期。
 - `api/`：HTTP/WebSocket 协议和连接边界。
-- `web/`：随 wheel 分发、无需构建的调试台。
+- `web/`：随 wheel 分发、无需构建的调试台；可以作为管理后台的内嵌 Chat 工作区运行。
+- `admin_web/`：由 `frontend/admin` 构建后随 wheel 分发的 Vue 3 + Element Plus 管理后台静态资源。
 
 ## 装配与数据流
 
@@ -24,7 +25,8 @@ lifespan 成功时将 Settings、Runtime 和 ready 状态注入 `app.state`；�
 
 客户端文本依次经过 `api -> application -> agent -> providers`，模型消息块再反向转换为统一服务端信封。
 Application 不导入 Provider/OpenAI/httpx；组合根只注入 `Callable[[BaseException], bool]` 分类边界。
-静态路径始终从包位置解析，不依赖当前工作目录。安全中间件为所有响应设置 CSP 和 `nosniff`。
+静态路径始终从包位置解析，不依赖当前工作目录。安全中间件为所有响应设置 CSP 和 `nosniff`；嵌入模式的
+Chat 页面仅允许同源管理后台以 iframe 加载。
 
 ## 部署与注意事项
 

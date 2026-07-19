@@ -3,17 +3,20 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+from cryptography.fernet import InvalidToken
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
-from somai_chat.admin.credentials import create_key_material, verify_key
+from somai_chat.admin.credentials import create_key_material, decrypt_key, encrypt_key, verify_key
 from somai_chat.admin.models import Client, ClientAccessKey
 
 
 class ClientRepository:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], pepper: str) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], pepper: str, encryption_secret: str) -> None:
         self._sessions = sessions
         self._pepper = pepper
+        self._encryption_secret = encryption_secret
 
     async def create(self, name: str, description: str | None, expires_at: datetime | None) -> tuple[Client, str]:
         key, material = create_key_material(self._pepper)
@@ -26,6 +29,7 @@ class ClientRepository:
                     client_id=client.id,
                     key_id=material.key_id,
                     secret_digest=material.secret_digest,
+                    encrypted_key=encrypt_key(key, self._encryption_secret),
                     expires_at=expires_at,
                 )
             )
@@ -33,7 +37,23 @@ class ClientRepository:
 
     async def list(self) -> list[Client]:
         async with self._sessions() as session:
-            return list((await session.scalars(select(Client).order_by(Client.created_at.desc()))).all())
+            statement = select(Client).options(selectinload(Client.access_keys)).order_by(Client.created_at.desc())
+            return list((await session.scalars(statement)).all())
+
+    async def reveal_key(self, client_id: UUID) -> str | None:
+        async with self._sessions() as session:
+            statement = (
+                select(ClientAccessKey)
+                .where(ClientAccessKey.client_id == client_id, ClientAccessKey.revoked_at.is_(None))
+                .order_by(ClientAccessKey.created_at.desc())
+            )
+            record = await session.scalar(statement)
+            if record is None or record.encrypted_key is None:
+                return None
+            try:
+                return decrypt_key(record.encrypted_key, self._encryption_secret)
+            except InvalidToken:
+                return None
 
     async def authenticate(self, key: str) -> Client | None:
         parts = key.split("_", 3)
@@ -82,6 +102,7 @@ class ClientRepository:
                     client_id=client_id,
                     key_id=material.key_id,
                     secret_digest=material.secret_digest,
+                    encrypted_key=encrypt_key(key, self._encryption_secret),
                     expires_at=expires_at,
                 )
             )

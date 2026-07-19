@@ -6,8 +6,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 
 from somai_chat.admin.auth import establish_session, require_admin, require_csrf, verify_password
+from somai_chat.admin.models import Client
+from somai_chat.admin.presence import ClientPresenceRegistry
 from somai_chat.admin.repository import ClientRepository
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -24,15 +27,34 @@ class ClientInput(BaseModel):
     expires_at: datetime | None = None
 
 
+class KeyRotationInput(BaseModel):
+    expires_at: datetime | None = None
+
+
 def _repository(request: Request) -> ClientRepository:
     return cast(ClientRepository, request.app.state.client_repository)
+
+
+def _presence(request: Request) -> ClientPresenceRegistry:
+    return cast(ClientPresenceRegistry, request.app.state.client_presence)
+
+
+def _key_display(client: Client) -> tuple[str | None, bool]:
+    active_keys = [key for key in client.access_keys if key.revoked_at is None]
+    if not active_keys:
+        return None, False
+    active_key = max(active_keys, key=lambda key: key.created_at)
+    masked_key_id = f"{active_key.key_id[:4]}••••{active_key.key_id[-4:]}"
+    return f"somai_sk_{masked_key_id}_••••••••", active_key.encrypted_key is not None
 
 
 @router.post("/session")
 async def login(request: Request, payload: LoginInput) -> dict[str, object]:
     settings = request.app.state.settings
-    if settings is None or payload.username != settings.admin_username or not verify_password(
-        payload.password, settings.admin_password.get_secret_value()
+    if (
+        settings is None
+        or payload.username != settings.admin_username
+        or not verify_password(payload.password, settings.admin_password.get_secret_value())
     ):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return {"username": settings.admin_username, "csrf_token": establish_session(request, settings.admin_username)}
@@ -53,13 +75,34 @@ async def session(request: Request) -> dict[str, str]:
 async def list_clients(request: Request) -> list[dict[str, object]]:
     require_admin(request)
     clients = await _repository(request).list()
-    return [{"id": str(client.id), "name": client.name, "enabled": client.enabled} for client in clients]
+    online_client_ids = await _presence(request).online_client_ids()
+    results: list[dict[str, object]] = []
+    for client in clients:
+        key_masked, can_reveal_key = _key_display(client)
+        results.append(
+            {
+                "id": str(client.id),
+                "name": client.name,
+                "description": client.description,
+                "enabled": client.enabled,
+                "online": client.id in online_client_ids,
+                "last_authenticated_at": client.last_authenticated_at,
+                "key_masked": key_masked,
+                "can_reveal_key": can_reveal_key,
+            }
+        )
+    return results
 
 
 @router.post("/clients", status_code=status.HTTP_201_CREATED)
 async def create_client(request: Request, payload: ClientInput) -> dict[str, object]:
     require_csrf(request)
-    client, key = await _repository(request).create(payload.name.strip(), payload.description, payload.expires_at)
+    try:
+        client, key = await _repository(request).create(payload.name.strip(), payload.description, payload.expires_at)
+    except IntegrityError as error:
+        if getattr(error.orig, "args", (None,))[0] == 1062 or "duplicate" in str(error.orig).lower():
+            raise HTTPException(status_code=409, detail="Client name already exists") from None
+        raise
     return {"id": str(client.id), "name": client.name, "key": key}
 
 
@@ -72,9 +115,18 @@ async def set_client_enabled(request: Request, client_id: UUID, enabled: bool) -
 
 
 @router.post("/clients/{client_id}/keys/rotate")
-async def rotate_key(request: Request, client_id: UUID, payload: ClientInput) -> dict[str, str]:
+async def rotate_key(request: Request, client_id: UUID, payload: KeyRotationInput) -> dict[str, str]:
     require_csrf(request)
     key = await _repository(request).rotate(client_id, payload.expires_at)
     if key is None:
         raise HTTPException(status_code=404, detail="Client not found")
+    return {"key": key}
+
+
+@router.post("/clients/{client_id}/key/reveal")
+async def reveal_key(request: Request, client_id: UUID) -> dict[str, str]:
+    require_csrf(request)
+    key = await _repository(request).reveal_key(client_id)
+    if key is None:
+        raise HTTPException(status_code=404, detail="Key cannot be revealed; rotate it to create a new key")
     return {"key": key}

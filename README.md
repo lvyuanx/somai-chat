@@ -46,8 +46,9 @@ SOMAI_DATABASE_URL='mysql+asyncmy://root:<password>@127.0.0.1:3306/somai_chat' \
 ```
 
 开发环境默认管理员为 `admin` / `123456`；生产环境必须覆盖管理员密码、
-`SOMAI_ADMIN_SESSION_SECRET` 与 `SOMAI_CLIENT_KEY_PEPPER`。后台入口为 `/admin`。
-创建机器人客户端时只显示一次完整 Key。机器人建立 WebSocket 时必须发送
+`SOMAI_ADMIN_SESSION_SECRET`、`SOMAI_CLIENT_KEY_PEPPER` 与 `SOMAI_CLIENT_KEY_ENCRYPTION_SECRET`。后台入口为 `/admin`。
+新建或轮换的机器人 Key 使用独立加密主密钥保存，管理员可在客户端卡片中脱敏查看、显式展开和复制；迁移前的 Key
+无法恢复，需轮换。机器人建立 WebSocket 时必须发送
 `Authorization: Bearer somai_sk_<key-id>_<secret>`；管理员从 Chat 菜单进入时使用登录会话。
 
 | 环境变量 | 默认/示例 | 说明 |
@@ -64,6 +65,7 @@ SOMAI_DATABASE_URL='mysql+asyncmy://root:<password>@127.0.0.1:3306/somai_chat' \
 | `SOMAI_ADMIN_PASSWORD` | `123456` | 后台超级管理员密码；生产环境必须覆盖默认值 |
 | `SOMAI_ADMIN_SESSION_SECRET` | 必填 | 管理员会话签名密钥；生产环境不得使用占位值 |
 | `SOMAI_CLIENT_KEY_PEPPER` | 必填 | 客户端 Key 摘要 pepper；生产环境不得使用占位值 |
+| `SOMAI_CLIENT_KEY_ENCRYPTION_SECRET` | 必填 | 管理员查看 Key 的加密主密钥；生产环境不得使用占位值 |
 | `SOMAI_MODEL_TEMPERATURE` | `0.4` | 生成温度，范围 0–2 |
 | `SOMAI_MODEL_MAX_TOKENS` | `800` | 最大输出 token 数 |
 | `SOMAI_MODEL_TIMEOUT_SECONDS` | `30` | 单次模型请求超时秒数 |

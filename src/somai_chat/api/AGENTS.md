@@ -4,8 +4,8 @@
 
 `api` 定义客户端与服务端事件协议，并提供健康检查与版本化 WebSocket 传输层。
 
-管理员 API 位于 `/api/v1/admin`，通过管理员会话和 CSRF 保护客户端生命周期操作；机器人 WebSocket
-需要 Bearer Key，管理员 Chat 则通过已登录 Cookie 认证。
+管理员 API 位于 `/api/v1/admin`，通过管理员会话和 CSRF 保护客户端生命周期操作；客户端列表同时返回实时
+WebSocket 在线状态和 Key 脱敏值。机器人 WebSocket 需要 Bearer Key，管理员 Chat 则通过已登录 Cookie 认证。
 
 ## 主要职责
 
@@ -20,7 +20,8 @@
 
 - `protocol.py`：客户端事件模型、解析入口和服务端事件通用信封。
 - `health.py`：定义 `/health/live` 与 `/health/ready`。
-- `websocket.py`：定义 `/api/v1/chat/ws/{conversation_id}` 连接与接收循环。
+- `admin.py`：定义管理员会话与客户端管理 API，客户端列表合并进程内连接注册表的在线状态。
+- `websocket.py`：定义 `/api/v1/chat/ws/{conversation_id}` 连接与接收循环，并在 Key 认证连接的生命周期内更新在线状态。
 - `__init__.py`：包标识，不隐式导出协议实现。
 
 ## 核心模型
@@ -60,7 +61,15 @@ WebSocket 应用可恢复字节上限（不下发传输紧急硬上限）；随�
 接收循环显式区分断开、文本和二进制帧；二进制、超出原始 UTF-8 字节限制、
 非法、任意层对象 key 重复或递归过深的 JSON、未知事件、忙碌和取消目标不存在
 都发送一个安全 `error` 信封且保持连接。
-断开或传输失败后在 `finally` 等待 Session 关闭，取消生成并禁止后续发送。
+断开或传输失败后在 `finally` 等待 Session 关闭，取消生成并禁止后续发送。通过 Key 认证的设备连接在发送
+`conversation.ready` 前注册到在线状态，并在断开时删除；同一客户端的新 Key 认证连接会以 `4001` 顶掉旧连接，
+管理员 Cookie 会话不计入机器人在线状态。
+
+管理员查看完整 Key 使用 CSRF 保护的 `POST /api/v1/admin/clients/{client_id}/key/reveal`；它只解密新建或轮换后
+保存的密文，无法恢复迁移前的旧 Key。
+
+Key 轮换请求只接受可选到期时间，不重复要求客户端创建时才需要的名称与描述字段。
+创建重复名称的客户端返回 `409 Client name already exists`，不暴露数据库约束错误。
 
 ## 依赖关系
 

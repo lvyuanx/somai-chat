@@ -37,6 +37,7 @@ class ClientAccessKey(Base):
     client_id: Mapped[UUID] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"))
     key_id: Mapped[str] = mapped_column(String(32), unique=True)
     secret_digest: Mapped[str] = mapped_column(String(64))
+    encrypted_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

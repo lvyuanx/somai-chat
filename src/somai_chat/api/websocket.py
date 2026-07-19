@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from somai_chat.admin.presence import ClientPresenceRegistry
 from somai_chat.admin.repository import ClientRepository
 from somai_chat.api.protocol import MessageCreate, Ping, ResponseCancel, ServerEvent, parse_client_event
 from somai_chat.application.conversation import ConversationRuntime, ConversationSession
@@ -70,6 +71,7 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
     settings = cast(Settings | None, getattr(websocket.app.state, "settings", None))
     runtime = cast(ConversationRuntime | None, getattr(websocket.app.state, "runtime", None))
     repository = cast(ClientRepository | None, getattr(websocket.app.state, "client_repository", None))
+    presence = cast(ClientPresenceRegistry | None, getattr(websocket.app.state, "client_presence", None))
     origin = websocket.headers.get("origin")
     await websocket.accept()
     if _CONVERSATION_ID.fullmatch(conversation_id) is None:
@@ -91,20 +93,23 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
             logger.info("conversation rejected", extra=log_context)
             await websocket.close(code=1008)
             return
-    session = websocket.scope.get("session")
+    admin_session = websocket.scope.get("session")
     is_administrator = settings.environment == "test" or (
-        isinstance(session, dict) and isinstance(session.get("admin"), str)
+        isinstance(admin_session, dict) and isinstance(admin_session.get("admin"), str)
     )
+    client_id = None
     if not is_administrator:
         authorization = websocket.headers.get("authorization", "")
         if repository is None or not authorization.startswith("Bearer "):
             logger.info("conversation rejected", extra=log_context)
             await websocket.close(code=1008)
             return
-        if await repository.authenticate(authorization.removeprefix("Bearer ")) is None:
+        client = await repository.authenticate(authorization.removeprefix("Bearer "))
+        if client is None:
             logger.info("conversation rejected", extra=log_context)
             await websocket.close(code=1008)
             return
+        client_id = client.id
     send_lock = asyncio.Lock()
 
     async def raw_send(event: ServerEvent) -> None:
@@ -125,6 +130,20 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
             )
         await raw_send(event)
 
+    is_registered = False
+    if client_id is not None:
+        if presence is None:
+            logger.info("conversation rejected", extra=log_context)
+            await websocket.close(code=1013)
+            return
+        previous_connection = await presence.replace(
+            client_id,
+            connection_id,
+            lambda: websocket.close(code=4001),
+        )
+        if previous_connection is not None:
+            await previous_connection.close()
+        is_registered = True
     session = ConversationSession(conversation_id, runtime, session_send)
     try:
         await raw_send(
@@ -182,4 +201,6 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
         try:
             await session.close()
         finally:
+            if is_registered and client_id is not None and presence is not None:
+                await presence.disconnect(client_id, connection_id)
             logger.info("conversation disconnected", extra=log_context)

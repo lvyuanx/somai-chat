@@ -5,7 +5,9 @@ def test_client_key_schema_keeps_key_material_separate() -> None:
     assert set(Base.metadata.tables) == {"clients", "client_access_keys"}
     columns = Base.metadata.tables["client_access_keys"].c
 
-    assert {"id", "client_id", "key_id", "secret_digest", "expires_at", "revoked_at"} <= set(columns.keys())
+    assert {"id", "client_id", "key_id", "secret_digest", "encrypted_key", "expires_at", "revoked_at"} <= set(
+        columns.keys()
+    )
     assert "raw_key" not in columns
 
 

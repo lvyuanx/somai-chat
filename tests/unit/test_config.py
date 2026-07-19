@@ -26,6 +26,7 @@ def test_settings_configures_database_and_administrator_credentials() -> None:
         database_url="mysql+asyncmy://somai:pass@db:3306/somai",
         admin_session_secret="session-secret",
         client_key_pepper="pepper-value",
+        client_key_encryption_secret="encryption-value",
     )
 
     assert settings.database_url.get_secret_value() == "mysql+asyncmy://somai:pass@db:3306/somai"
@@ -33,6 +34,7 @@ def test_settings_configures_database_and_administrator_credentials() -> None:
     assert settings.admin_password.get_secret_value() == "123456"
     assert settings.admin_session_secret.get_secret_value() == "session-secret"
     assert settings.client_key_pepper.get_secret_value() == "pepper-value"
+    assert settings.client_key_encryption_secret.get_secret_value() == "encryption-value"
 
 
 def test_settings_hides_administrator_secrets_in_repr() -> None:
@@ -43,11 +45,13 @@ def test_settings_hides_administrator_secrets_in_repr() -> None:
         admin_password="admin-password",
         admin_session_secret="session-secret",
         client_key_pepper="pepper-value",
+        client_key_encryption_secret="encryption-value",
     )
 
     assert "admin-password" not in repr(settings)
     assert "session-secret" not in repr(settings)
     assert "pepper-value" not in repr(settings)
+    assert "encryption-value" not in repr(settings)
 
 
 def test_settings_hides_database_url_in_repr() -> None:

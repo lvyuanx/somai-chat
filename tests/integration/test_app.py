@@ -10,7 +10,9 @@ import sys
 import threading
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
+from types import SimpleNamespace
 from typing import Any, cast
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -313,6 +315,42 @@ def test_websocket_origin_policy_allows_configured_and_device_clients() -> None:
             assert socket.receive_json()["type"] == "conversation.ready"
         with client.websocket_connect("/api/v1/chat/ws/conv_device") as socket:
             assert socket.receive_json()["type"] == "conversation.ready"
+
+
+def test_robot_client_replaces_an_existing_websocket_connection() -> None:
+    class RepositoryStub:
+        async def authenticate(self, key: str) -> object | None:
+            return SimpleNamespace(id=client_id) if key == "somai_sk_test_secret" else None
+
+    client_id = uuid4()
+    settings = Settings(
+        environment="development",
+        openai_api_key=SecretStr("test-secret"),
+        openai_model="test-model",
+        allowed_origins=["https://allowed.example"],
+    )
+    runtime = ConversationRuntime(cast(ConversationGraph, StreamingGraph()))
+    app = create_app(settings=settings, runtime=runtime)
+
+    with TestClient(app) as client:
+        client.app.state.client_repository = RepositoryStub()
+        registry = client.app.state.client_presence
+        with client.websocket_connect(
+            "/api/v1/chat/ws/conv_primary",
+            headers={"authorization": "Bearer somai_sk_test_secret"},
+        ) as primary:
+            assert primary.receive_json()["type"] == "conversation.ready"
+            assert asyncio.run(registry.is_online(client_id))
+            with client.websocket_connect(
+                "/api/v1/chat/ws/conv_secondary",
+                headers={"authorization": "Bearer somai_sk_test_secret"},
+            ) as secondary:
+                assert secondary.receive_json()["type"] == "conversation.ready"
+                with pytest.raises(WebSocketDisconnect) as captured:
+                    primary.receive_json()
+                assert captured.value.code == 4001
+                assert asyncio.run(registry.is_online(client_id))
+        assert not asyncio.run(registry.is_online(client_id))
 
 
 def test_websocket_origin_policy_normalizes_header_origin() -> None:

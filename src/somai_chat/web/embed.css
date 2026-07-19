@@ -1,15 +1,15 @@
 body.embedded {
-  --surface-base: #0c1014;
-  --surface-raised: #151d25;
-  --surface-panel: #101820;
-  --surface-message: #162844;
-  --text-primary: #ecf4ff;
-  --text-muted: #93a6ba;
-  --line: #2d3d4d;
-  --line-dark: #3b5268;
-  --accent-blue: #5796ff;
-  --accent-blue-dark: #3d76cc;
-  background: #0c1014;
+  --surface-base: #0d1127;
+  --surface-raised: rgba(27, 33, 66, 0.78);
+  --surface-panel: rgba(17, 24, 50, 0.74);
+  --surface-message: rgba(104, 118, 222, 0.17);
+  --text-primary: #f0f2ff;
+  --text-muted: #a7b2cc;
+  --line: rgba(190, 199, 255, 0.2);
+  --line-dark: rgba(202, 209, 255, 0.28);
+  --accent-blue: #9da7ff;
+  --accent-blue-dark: #7682ee;
+  background: transparent;
 }
 
 body.embedded .console-shell {
@@ -19,11 +19,24 @@ body.embedded .console-shell {
   margin: 0;
   border: 0;
   border-radius: 0;
+  background: transparent;
   box-shadow: none;
 }
 
-body.embedded .brand-mark,
+body.embedded .panel,
+body.embedded .composer,
+body.embedded .message,
 body.embedded .control-button,
+body.embedded .primary-button,
+body.embedded .brand-mark {
+  border-radius: 14px;
+}
+
+body.embedded .panel,
+body.embedded .composer {
+  backdrop-filter: blur(16px) saturate(130%);
+}
+
 body.embedded .primary-button {
-  border-radius: 0;
+  box-shadow: 0 9px 24px rgba(98, 111, 227, 0.22);
 }
