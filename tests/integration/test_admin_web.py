@@ -34,3 +34,16 @@ def test_embedded_chat_uses_the_admin_color_mode() -> None:
 
     assert "body.embedded" in (web_directory / "embed.css").read_text(encoding="utf-8")
     assert "document.body.classList.add(\"embedded\")" in (web_directory / "app.js").read_text(encoding="utf-8")
+
+
+def test_embedded_chat_allows_only_same_origin_framing() -> None:
+    from fastapi.testclient import TestClient
+
+    from somai_chat.main import create_app
+
+    with TestClient(create_app()) as client:
+        embedded = client.get("/assets/index.html?embed=1")
+        standalone = client.get("/assets/index.html")
+
+    assert "frame-ancestors 'self'" in embedded.headers["content-security-policy"]
+    assert "frame-ancestors 'none'" in standalone.headers["content-security-policy"]

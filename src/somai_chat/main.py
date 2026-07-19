@@ -69,9 +69,11 @@ def _websocket_authority(request: Request) -> str | None:
 def _content_security_policy(request: Request) -> str:
     authority = _websocket_authority(request)
     connect_sources = "'self'" if authority is None else f"'self' ws://{authority} wss://{authority}"
+    embedded_chat = request.url.path == "/assets/index.html" and request.query_params.get("embed") == "1"
+    frame_ancestors = "'self'" if embedded_chat else "'none'"
     return (
         "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; "
-        f"connect-src {connect_sources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        f"connect-src {connect_sources}; object-src 'none'; base-uri 'none'; frame-ancestors {frame_ancestors}"
     )
 
 
