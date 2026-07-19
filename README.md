@@ -37,6 +37,19 @@ make dev
 
 所有字段使用 `SOMAI_` 前缀，`.env.example` 只有占位值，禁止提交真实密钥。
 
+后台管理使用 MySQL。先创建数据库并执行迁移：
+
+```bash
+mysql -u root -p -e 'CREATE DATABASE somai_chat CHARACTER SET utf8mb4'
+SOMAI_DATABASE_URL='mysql+asyncmy://root:<password>@127.0.0.1:3306/somai_chat' \
+  uv run alembic upgrade head
+```
+
+开发环境默认管理员为 `admin` / `123456`；生产环境必须覆盖管理员密码、
+`SOMAI_ADMIN_SESSION_SECRET` 与 `SOMAI_CLIENT_KEY_PEPPER`。后台入口为 `/admin`。
+创建机器人客户端时只显示一次完整 Key。机器人建立 WebSocket 时必须发送
+`Authorization: Bearer somai_sk_<key-id>_<secret>`；管理员从 Chat 菜单进入时使用登录会话。
+
 | 环境变量 | 默认/示例 | 说明 |
 |---|---|---|
 | `SOMAI_ENVIRONMENT` | `development` | `development`、`test` 或 `production`；development 启用 reload |
@@ -46,6 +59,11 @@ make dev
 | `SOMAI_OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容 HTTP 基地址 |
 | `SOMAI_OPENAI_API_KEY` | 必填 | API Key；使用 `SecretStr`，不得写入日志 |
 | `SOMAI_OPENAI_MODEL` | 必填 | 兼容端点提供的模型名 |
+| `SOMAI_DATABASE_URL` | 本地 MySQL 示例 | SQLAlchemy 异步 MySQL 连接 URL，使用 `mysql+asyncmy` 方言 |
+| `SOMAI_ADMIN_USERNAME` | `admin` | 后台超级管理员用户名 |
+| `SOMAI_ADMIN_PASSWORD` | `123456` | 后台超级管理员密码；生产环境必须覆盖默认值 |
+| `SOMAI_ADMIN_SESSION_SECRET` | 必填 | 管理员会话签名密钥；生产环境不得使用占位值 |
+| `SOMAI_CLIENT_KEY_PEPPER` | 必填 | 客户端 Key 摘要 pepper；生产环境不得使用占位值 |
 | `SOMAI_MODEL_TEMPERATURE` | `0.4` | 生成温度，范围 0–2 |
 | `SOMAI_MODEL_MAX_TOKENS` | `800` | 最大输出 token 数 |
 | `SOMAI_MODEL_TIMEOUT_SECONDS` | `30` | 单次模型请求超时秒数 |

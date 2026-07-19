@@ -47,6 +47,7 @@ def uvicorn_server(*, ready: bool, app_limit: int = 32768, transport_limit: int 
             environment.pop(name)
     if ready:
         environment.update(
+            SOMAI_ENVIRONMENT="test",
             SOMAI_OPENAI_API_KEY="test-secret",
             SOMAI_OPENAI_MODEL="test-model",
             SOMAI_QWEATHER_API_HOST="https://example.qweatherapi.com",

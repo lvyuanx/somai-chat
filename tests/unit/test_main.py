@@ -40,6 +40,10 @@ def test_run_loads_dotenv_and_passes_server_settings_to_uvicorn(
         "SOMAI_ENVIRONMENT=production\n"
         "SOMAI_OPENAI_API_KEY=test-secret\n"
         "SOMAI_OPENAI_MODEL=test-model\n"
+        "SOMAI_DATABASE_URL=mysql+asyncmy://somai:pass@db:3306/somai\n"
+        "SOMAI_ADMIN_PASSWORD=production-password\n"
+        "SOMAI_ADMIN_SESSION_SECRET=production-session-secret\n"
+        "SOMAI_CLIENT_KEY_PEPPER=production-pepper\n"
         "SOMAI_HOST=127.0.0.1\n"
         "SOMAI_PORT=9123\n"
         "SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES=23456\n"
@@ -50,6 +54,10 @@ def test_run_loads_dotenv_and_passes_server_settings_to_uvicorn(
         "SOMAI_ENVIRONMENT",
         "SOMAI_OPENAI_API_KEY",
         "SOMAI_OPENAI_MODEL",
+        "SOMAI_DATABASE_URL",
+        "SOMAI_ADMIN_PASSWORD",
+        "SOMAI_ADMIN_SESSION_SECRET",
+        "SOMAI_CLIENT_KEY_PEPPER",
         "SOMAI_HOST",
         "SOMAI_PORT",
         "SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES",

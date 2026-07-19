@@ -20,7 +20,11 @@ def test_debug_console_is_served_without_runtime_configuration() -> None:
 
 def test_debug_console_has_accessible_local_structure() -> None:
     with TestClient(create_app()) as client:
-        html = client.get("/").text
+        root = client.get("/", follow_redirects=False)
+        html = client.get("/assets/index.html").text
+
+    assert root.status_code == 307
+    assert root.headers["location"] == "/admin"
 
     required_fragments = (
         'name="viewport"',
@@ -77,7 +81,7 @@ def test_console_responses_have_security_and_no_cache_headers() -> None:
     )
     with TestClient(create_app()) as client:
         paths = (
-            "/",
+            "/assets/index.html",
             "/assets/app.css",
             "/assets/responsive.css",
             "/assets/app.js",

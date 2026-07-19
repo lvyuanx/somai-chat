@@ -1,0 +1,1 @@
+"""Static administrator console assets."""

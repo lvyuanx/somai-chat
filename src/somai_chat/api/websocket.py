@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from somai_chat.admin.repository import ClientRepository
 from somai_chat.api.protocol import MessageCreate, Ping, ResponseCancel, ServerEvent, parse_client_event
 from somai_chat.application.conversation import ConversationRuntime, ConversationSession
 from somai_chat.core.config import Settings, normalize_origin
@@ -68,6 +69,7 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
     log_context = {"connection_id": connection_id, "conversation_id": conversation_id}
     settings = cast(Settings | None, getattr(websocket.app.state, "settings", None))
     runtime = cast(ConversationRuntime | None, getattr(websocket.app.state, "runtime", None))
+    repository = cast(ClientRepository | None, getattr(websocket.app.state, "client_repository", None))
     origin = websocket.headers.get("origin")
     await websocket.accept()
     if _CONVERSATION_ID.fullmatch(conversation_id) is None:
@@ -86,6 +88,20 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
             await websocket.close(code=1008)
             return
         if normalized_origin not in settings.allowed_origins:
+            logger.info("conversation rejected", extra=log_context)
+            await websocket.close(code=1008)
+            return
+    session = websocket.scope.get("session")
+    is_administrator = settings.environment == "test" or (
+        isinstance(session, dict) and isinstance(session.get("admin"), str)
+    )
+    if not is_administrator:
+        authorization = websocket.headers.get("authorization", "")
+        if repository is None or not authorization.startswith("Bearer "):
+            logger.info("conversation rejected", extra=log_context)
+            await websocket.close(code=1008)
+            return
+        if await repository.authenticate(authorization.removeprefix("Bearer ")) is None:
             logger.info("conversation rejected", extra=log_context)
             await websocket.close(code=1008)
             return

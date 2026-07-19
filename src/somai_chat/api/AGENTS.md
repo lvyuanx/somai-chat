@@ -4,6 +4,9 @@
 
 `api` 定义客户端与服务端事件协议，并提供健康检查与版本化 WebSocket 传输层。
 
+管理员 API 位于 `/api/v1/admin`，通过管理员会话和 CSRF 保护客户端生命周期操作；机器人 WebSocket
+需要 Bearer Key，管理员 Chat 则通过已登录 Cookie 认证。
+
 ## 主要职责
 
 - 严格校验客户端事件结构、类型、标识符和消息内容。
