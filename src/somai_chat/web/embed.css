@@ -1,0 +1,29 @@
+body.embedded {
+  --surface-base: #0c1014;
+  --surface-raised: #151d25;
+  --surface-panel: #101820;
+  --surface-message: #162844;
+  --text-primary: #ecf4ff;
+  --text-muted: #93a6ba;
+  --line: #2d3d4d;
+  --line-dark: #3b5268;
+  --accent-blue: #5796ff;
+  --accent-blue-dark: #3d76cc;
+  background: #0c1014;
+}
+
+body.embedded .console-shell {
+  width: 100%;
+  height: 100vh;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.embedded .brand-mark,
+body.embedded .control-button,
+body.embedded .primary-button {
+  border-radius: 0;
+}

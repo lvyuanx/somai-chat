@@ -2,6 +2,10 @@ import {codePointLength, createConsoleView} from "./view.js";
 (() => {
   "use strict";
 
+  if (new URLSearchParams(window.location.search).has("embed")) {
+    document.body.classList.add("embedded");
+  }
+
   const DEFAULT_MAX_MESSAGE_LENGTH = 8000;
   const DEFAULT_MAX_FRAME_BYTES = 32768;
   const MAX_RECONNECT_ATTEMPTS = 5;
