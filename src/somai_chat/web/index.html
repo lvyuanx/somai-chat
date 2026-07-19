@@ -73,6 +73,12 @@
             placeholder="Enter command or message…"
             aria-describedby="composer-hint"
           ></textarea>
+          <div class="composer-attachment">
+            <input id="image-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+            <button id="image-select" class="control-button control-button--quiet" type="button">Add image</button>
+            <img id="image-preview" alt="Selected image preview" hidden>
+            <span id="image-name"></span>
+          </div>
           <div class="composer-footer">
             <p id="composer-hint">Enter to send · Shift + Enter for line break</p>
             <button id="send-stop" class="primary-button" type="submit" disabled>Send</button>

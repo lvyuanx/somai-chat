@@ -20,6 +20,7 @@ from starlette.responses import Response
 
 from somai_chat.agent.graph import build_conversation_graph
 from somai_chat.api.health import router as health_router
+from somai_chat.api.images import router as images_router
 from somai_chat.api.websocket import router as websocket_router
 from somai_chat.application.conversation import ConversationRuntime
 from somai_chat.core.config import Settings, get_settings
@@ -64,7 +65,7 @@ def _content_security_policy(request: Request) -> str:
     authority = _websocket_authority(request)
     connect_sources = "'self'" if authority is None else f"'self' ws://{authority} wss://{authority}"
     return (
-        "default-src 'self'; script-src 'self'; style-src 'self'; "
+        "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; "
         f"connect-src {connect_sources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
     )
 
@@ -156,6 +157,7 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
     application.state.ready = settings is not None and runtime is not None
     application.add_middleware(SecurityHeadersMiddleware)
     application.include_router(health_router)
+    application.include_router(images_router)
     application.include_router(websocket_router)
     application.mount("/assets", StaticFiles(directory=WEB_DIRECTORY), name="assets")
 

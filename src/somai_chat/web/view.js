@@ -69,6 +69,13 @@ export function createConsoleView({document, window, elements, limits}) {
     meta.textContent = role === "assistant" ? "SOMAI" : role;
     body.className = "message__body";
     renderBody(body, content, Boolean(options.streaming));
+    if (typeof options.imageSource === "string") {
+      const image = document.createElement("img");
+      image.className = "message__image";
+      image.src = options.imageSource;
+      image.alt = "Uploaded image";
+      body.append(image);
+    }
     article.append(meta, body);
     elements.timeline.append(article);
     trimTimeline(article);

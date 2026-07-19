@@ -32,6 +32,8 @@ def test_prompt_separates_stable_identity_from_runtime_capabilities() -> None:
     assert "具体日期" in RUNTIME_CAPABILITIES
     assert "未指定地点时默认查询武汉" in RUNTIME_CAPABILITIES
     assert "必须调用天气工具" in RUNTIME_CAPABILITIES
-    assert "没有视觉、位置、设备状态或动作工具" in RUNTIME_CAPABILITIES
+    assert "UNTRUSTED_IMAGE_OBSERVATION" in RUNTIME_CAPABILITIES
+    assert "不能声称自己直接看见了现实世界" in RUNTIME_CAPABILITIES
+    assert "用户对图片识别结果作出纠正" in RUNTIME_CAPABILITIES
     assert SOMAI_SYSTEM_PROMPT == f"{SOMAI_IDENTITY}\n\n{RUNTIME_CAPABILITIES}"
     assert "{user" not in SOMAI_SYSTEM_PROMPT

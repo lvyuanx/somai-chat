@@ -123,6 +123,14 @@ def test_health_live_and_ready_with_injected_dependencies() -> None:
     assert response.json() == {"status": "ready"}
 
 
+def test_image_upload_returns_same_origin_url(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SOMAI_UPLOAD_DIRECTORY", str(tmp_path))
+    with app_client() as client:
+        response = client.post("/api/v1/images", files={"image": ("sample.png", b"not-a-real-png", "image/png")})
+
+    assert response.status_code == 400
+
+
 def test_readiness_does_not_call_runtime() -> None:
     class NetworkTrapRuntime:
         def stream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:

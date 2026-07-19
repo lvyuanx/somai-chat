@@ -11,6 +11,10 @@ import {codePointLength, createConsoleView} from "./view.js";
   const elements = {
     composer: document.getElementById("composer"),
     input: document.getElementById("message-input"),
+    imageInput: document.getElementById("image-input"),
+    imageSelect: document.getElementById("image-select"),
+    imageName: document.getElementById("image-name"),
+    imagePreview: document.getElementById("image-preview"),
     sendStop: document.getElementById("send-stop"),
     timeline: document.getElementById("message-timeline"),
     trace: document.getElementById("event-trace"),
@@ -45,6 +49,10 @@ import {codePointLength, createConsoleView} from "./view.js";
     reconnectTimer: null,
     intentionalClose: false,
     messageSequence: 0,
+    imageUrl: null,
+    imageDisplayUrl: null,
+    uploadingImage: false,
+    imagePreviewUrl: null,
   };
   function randomToken() {
     if (window.crypto && typeof window.crypto.randomUUID === "function") {
@@ -103,8 +111,9 @@ import {codePointLength, createConsoleView} from "./view.js";
     elements.sendStop.dataset.mode = state.phase === "streaming" ? "stop" : "send";
     elements.sendStop.disabled = state.phase === "pending" || state.phase === "cancelling"
       ? true
-      : state.phase === "streaming" ? !state.activeResponseId : !ready || !hasContent;
+      : state.phase === "streaming" ? !state.activeResponseId : !ready || !hasContent || state.uploadingImage;
     elements.input.disabled = state.phase !== "idle";
+    if (elements.imageSelect) elements.imageSelect.disabled = state.phase !== "idle" || state.uploadingImage;
     elements.clearDisplay.disabled = state.phase !== "idle";
   }
 
@@ -323,7 +332,11 @@ import {codePointLength, createConsoleView} from "./view.js";
     }
     state.messageSequence += 1;
     const messageId = `msg_${randomToken()}_${state.messageSequence}`.slice(0, 128);
-    const event = {type: "message.create", data: {message_id: messageId, content}};
+    const data = {message_id: messageId, content};
+    if (state.imageUrl) {
+      data.image_urls = [state.imageUrl];
+    }
+    const event = {type: "message.create", data};
     const serialized = JSON.stringify(event);
     if (new TextEncoder().encode(serialized).byteLength > state.maxFrameBytes) {
       showLocalError(`Message frame exceeds the ${state.maxFrameBytes} byte limit.`);
@@ -333,8 +346,17 @@ import {codePointLength, createConsoleView} from "./view.js";
       state.pendingMessageId = messageId;
       state.requestStartedAt = Date.now();
       state.phase = "pending";
-      view.appendMessage("user", content);
+      view.appendMessage("user", content, {imageSource: state.imageDisplayUrl});
       elements.input.value = "";
+      state.imageUrl = null;
+      state.imageDisplayUrl = null;
+      state.imagePreviewUrl = null;
+      if (elements.imageInput && elements.imagePreview) {
+        elements.imageInput.value = "";
+        elements.imagePreview.hidden = true;
+        elements.imagePreview.removeAttribute("src");
+      }
+      if (elements.imageName) elements.imageName.textContent = "";
       elements.count.textContent = `0 / ${state.maxMessageLength}`;
       updateControls();
     }
@@ -354,6 +376,44 @@ import {codePointLength, createConsoleView} from "./view.js";
       submitMessage();
     }
   });
+  if (elements.imageSelect && elements.imageInput && elements.imageName && elements.imagePreview) {
+    elements.imageSelect.addEventListener("click", () => elements.imageInput.click());
+    elements.imageInput.addEventListener("change", async () => {
+    const [file] = elements.imageInput.files;
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      state.imagePreviewUrl = typeof reader.result === "string" ? reader.result : null;
+      if (state.imagePreviewUrl) elements.imagePreview.src = state.imagePreviewUrl;
+    };
+    reader.readAsDataURL(file);
+    elements.imagePreview.hidden = false;
+    state.uploadingImage = true;
+    elements.imageName.textContent = "Uploading image...";
+    updateControls();
+    const body = new FormData();
+    body.append("image", file);
+    try {
+      const response = await fetch("/api/v1/images", {method: "POST", body});
+      const payload = await response.json();
+      if (!response.ok || typeof payload.image_url !== "string") throw new Error();
+      state.imageUrl = new URL(payload.image_url, window.location.origin).href;
+      state.imageDisplayUrl = payload.image_url;
+      elements.imageName.textContent = file.name;
+    } catch (_error) {
+      state.imageUrl = null;
+      state.imageDisplayUrl = null;
+      state.imagePreviewUrl = null;
+      elements.imageInput.value = "";
+      elements.imagePreview.hidden = true;
+      elements.imagePreview.removeAttribute("src");
+      elements.imageName.textContent = "Image upload failed.";
+    } finally {
+      state.uploadingImage = false;
+      updateControls();
+    }
+    });
+  }
   elements.newSession.addEventListener("click", () => {
     state.intentionalClose = true;
     clearTimeout(state.reconnectTimer);

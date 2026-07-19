@@ -13,6 +13,14 @@ class HttpImageFetcher:
         self._client = client
         self._max_bytes = max_bytes
 
+    @staticmethod
+    def _allows_uploaded_loopback(url: str) -> bool:
+        parsed = urlsplit(url)
+        return (
+            parsed.hostname in {"127.0.0.1", "localhost", "0.0.0.0"}
+            and parsed.path.startswith("/api/v1/images/img_")
+        )
+
     async def fetch(self, url: str) -> tuple[str, bytes]:
         parsed = urlsplit(url)
         if parsed.scheme not in {"http", "https"} or parsed.hostname is None:
@@ -21,7 +29,7 @@ class HttpImageFetcher:
             address = ip_address(parsed.hostname)
         except ValueError:
             address = None
-        if address is not None and not address.is_global:
+        if address is not None and not address.is_global and not self._allows_uploaded_loopback(url):
             raise ValueError("Private image URL")
         async with self._client.stream("GET", url, follow_redirects=False) as response:
             media_type = response.headers.get("content-type", "").split(";", 1)[0].lower()

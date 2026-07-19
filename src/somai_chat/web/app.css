@@ -373,6 +373,27 @@ h1 {
 .composer textarea::placeholder {
   color: #7184a1;
 }
+
+.composer-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+#image-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#image-preview,
+.message__image {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border: 1px solid var(--border-subtle);
+}
 .composer-footer p {
   margin: 0;
   text-transform: none;

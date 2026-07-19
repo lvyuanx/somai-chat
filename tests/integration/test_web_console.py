@@ -72,7 +72,7 @@ def test_debug_console_assets_are_served_with_expected_content_types() -> None:
 
 def test_console_responses_have_security_and_no_cache_headers() -> None:
     expected_csp = (
-        "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; "
+        "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; "
         "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
     )
     with TestClient(create_app()) as client:
