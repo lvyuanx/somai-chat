@@ -15,7 +15,7 @@ class KeyMaterial:
 
 
 def create_key_material(pepper: str) -> tuple[str, KeyMaterial]:
-    key_id = secrets.token_urlsafe(9)
+    key_id = secrets.token_hex(8)
     secret = secrets.token_urlsafe(32)
     key = f"{_KEY_PREFIX}_{key_id}_{secret}"
     return key, KeyMaterial(key_id, _digest(key_id, secret, pepper))
