@@ -139,7 +139,7 @@ def test_settings_accepts_optional_qwen_vision_provider() -> None:
 )
 def test_settings_rejects_incomplete_or_invalid_vision_configuration(overrides: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
-        Settings(openai_api_key="chat-secret", openai_model="chat-model", **overrides)
+        Settings(_env_file=None, openai_api_key="chat-secret", openai_model="chat-model", **overrides)
 
 
 def test_settings_reject_non_positive_message_limit() -> None:

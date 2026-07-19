@@ -20,6 +20,7 @@ def test_application_registers_time_tool_with_conversation_graph(monkeypatch: py
     monkeypatch.setattr(main_module, "build_conversation_graph", build_graph)
     monkeypatch.setattr(main_module.httpx, "AsyncClient", lambda **_kwargs: object())
     settings = Settings(
+        _env_file=None,
         openai_api_key=SecretStr("test-secret"),
         openai_model="test-model",
         qweather_api_host="https://example.qweatherapi.com",
