@@ -102,9 +102,10 @@ def without_model_environment() -> Any:
         os.environ.update(saved)
 
 
-def test_module_import_is_safe_without_model_environment() -> None:
+def test_module_import_is_safe_without_model_environment(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     get_settings.cache_clear()
     try:
+        monkeypatch.chdir(tmp_path)
         with without_model_environment():
             sys.modules.pop("somai_chat.main", None)
             module = importlib.import_module("somai_chat.main")
