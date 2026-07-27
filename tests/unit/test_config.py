@@ -56,12 +56,35 @@ def test_settings_hides_administrator_secrets_in_repr() -> None:
         admin_session_secret="session-secret",
         client_key_pepper="pepper-value",
         client_key_encryption_secret="encryption-value",
+        capability_secret_encryption_secret="capability-encryption-value",
     )
 
     assert "admin-password" not in repr(settings)
     assert "session-secret" not in repr(settings)
     assert "pepper-value" not in repr(settings)
     assert "encryption-value" not in repr(settings)
+    assert "capability-encryption-value" not in repr(settings)
+
+
+def test_settings_stores_capability_encryption_secret_as_secret_str() -> None:
+    settings = Settings(
+        openai_api_key="chat-secret",
+        openai_model="chat-model",
+        capability_secret_encryption_secret="capability-encryption-value",
+    )
+
+    assert isinstance(settings.capability_secret_encryption_secret, SecretStr)
+    assert settings.capability_secret_encryption_secret.get_secret_value() == "capability-encryption-value"
+
+
+@pytest.mark.parametrize("secret", ["", "   "])
+def test_settings_rejects_blank_capability_encryption_secret(secret: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            openai_api_key="chat-secret",
+            openai_model="chat-model",
+            capability_secret_encryption_secret=secret,
+        )
 
 
 def test_settings_hides_database_url_in_repr() -> None:
@@ -123,6 +146,22 @@ def test_production_rejects_placeholder_administrator_secrets(placeholder: str) 
             admin_password="strong-password",
             admin_session_secret=placeholder,
             client_key_pepper="production-pepper",
+        )
+
+
+@pytest.mark.parametrize("placeholder", ["replace-me", "change-me", "your-secret-here", "placeholder"])
+def test_production_rejects_placeholder_capability_encryption_secret(placeholder: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="production",
+            openai_api_key="chat-secret",
+            openai_model="chat-model",
+            database_url="mysql+asyncmy://somai:pass@db:3306/somai",
+            admin_password="strong-password",
+            admin_session_secret="production-session-secret",
+            client_key_pepper="production-pepper",
+            client_key_encryption_secret="production-client-encryption-secret",
+            capability_secret_encryption_secret=placeholder,
         )
 
 

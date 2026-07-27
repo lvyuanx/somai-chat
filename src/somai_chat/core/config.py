@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     admin_session_secret: SecretStr = SecretStr("change-me")
     client_key_pepper: SecretStr = SecretStr("change-me")
     client_key_encryption_secret: SecretStr = SecretStr("change-me")
+    capability_secret_encryption_secret: SecretStr = SecretStr("change-me")
     model_temperature: float = Field(default=0.4, ge=0, le=2)
     model_max_tokens: int = Field(default=800, gt=0)
     model_timeout_seconds: float = Field(default=30, gt=0)
@@ -109,6 +110,7 @@ class Settings(BaseSettings):
         "admin_session_secret",
         "client_key_pepper",
         "client_key_encryption_secret",
+        "capability_secret_encryption_secret",
         mode="before",
     )
     @classmethod
@@ -206,6 +208,7 @@ class Settings(BaseSettings):
                 self.admin_session_secret.get_secret_value(),
                 self.client_key_pepper.get_secret_value(),
                 self.client_key_encryption_secret.get_secret_value(),
+                self.capability_secret_encryption_secret.get_secret_value(),
             )
             if self.admin_password.get_secret_value() == "123456":
                 raise ValueError("Production administrator password must not use the default value")
