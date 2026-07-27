@@ -20,7 +20,7 @@
 
 `ConversationRuntime` 负责一轮生成和事件翻译；
 `ConversationSession` 是每个 WebSocket 连接独有的控制器。
-`TextNormalizer` 在 Runtime 发出流式文本前移除 Markdown 表现标记，并将常见天气单位转换为自然中文。
+`TextNormalizer` 在 Runtime 发出流式文本前移除 Markdown 表现标记、Markdown 链接目标和裸网址，并将常见天气单位转换为自然中文，确保回复可直接用于端侧 TTS。
 
 ## 核心接口与主要流程
 

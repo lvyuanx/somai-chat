@@ -13,6 +13,8 @@ def test_prompt_requires_user_language_and_tts_friendly_output() -> None:
     assert "口语化" in SOMAI_IDENTITY
     assert "TTS" in SOMAI_IDENTITY
     assert "禁止使用 Markdown" in SOMAI_IDENTITY
+    assert "不要输出来源名称或网址" in SOMAI_IDENTITY
+    assert "列出主要来源名称和网址" not in RUNTIME_CAPABILITIES
 
 
 def test_prompt_defines_embodied_and_safety_boundaries() -> None:
