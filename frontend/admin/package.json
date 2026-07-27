@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "vite build"
+    "build": "vite build",
+    "test": "node ../../tests/js/admin_capability_state.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

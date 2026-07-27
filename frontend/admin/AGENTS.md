@@ -11,6 +11,7 @@
 - 以卡片展示机器人客户端的在线状态，并用开关启停客户端、轮换连接 WebSocket 的 Key。
 - 默认展示脱敏 Key；管理员通过眼睛图标短暂查看后才可复制完整 Key，旧 Key 则引导轮换。
 - 提供内嵌的 Chat 工作区；该视图使用同源 iframe 加载现有调试台，保留其完整会话、图片和事件追踪能力。
+- 以卡片管理天气、时间和联网搜索，支持开关、固定参数、密钥操作和单卡保存。
 
 ## 目录说明
 
@@ -18,6 +19,9 @@
 - `src/main.js`：Vue 与 Element Plus 应用入口。
 - `src/style.css`：深色科技风的后台主题覆盖。
 - `src/client-cards.css`：客户端卡片、在线状态、Key 脱敏与查看控件样式。
+- `src/CapabilityManagement.vue`：能力卡片、保存与密钥交互。
+- `src/capability-state.js`：可独立测试的草稿校验与请求转换。
+- `src/capability-cards.css`：能力卡片和响应式布局。
 - `vite.config.js`：将生产资源写入 Python 包的静态目录。
 
 ## 数据流

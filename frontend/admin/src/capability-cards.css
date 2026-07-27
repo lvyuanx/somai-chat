@@ -1,0 +1,18 @@
+.capability-hint { color: var(--text-muted); font-size: 12px; }
+.capability-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.capability-card { border: 1px solid var(--line) !important; border-radius: 20px !important; background: var(--glass) !important; }
+.capability-card .el-card__body { display: flex; flex-direction: column; min-height: 430px; padding: 20px; }
+.capability-header { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.capability-header h4 { margin: 0 0 5px; font-size: 18px; }
+.capability-header small { color: var(--text-muted); letter-spacing: .1em; }
+.capability-description { min-height: 38px; color: #a8b3cd; font-size: 12px; }
+.capability-secret { display: flex; width: 100%; gap: 8px; }
+.revealed-secret { display: block; width: 100%; margin-top: 8px; overflow-wrap: anywhere; color: var(--teal); }
+.clear-secret { margin-left: auto; }
+.capability-number-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.time-capability-note { display: grid; place-items: center; gap: 8px; min-height: 190px; border: 1px dashed var(--line); border-radius: 14px; color: var(--text-muted); }
+.time-capability-note strong { color: #e7ebff; }
+.capability-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 18px; }
+.capability-actions small { color: var(--text-muted); }
+@media (max-width: 1200px) { .capability-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .capability-grid { grid-template-columns: 1fr; } }

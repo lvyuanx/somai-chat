@@ -10,12 +10,13 @@ import {
   DocumentCopy,
   Hide,
   Key,
+  MagicStick,
   Plus,
   Refresh,
   SwitchButton,
   View,
 } from "@element-plus/icons-vue";
-
+import CapabilityManagement from "./CapabilityManagement.vue";
 const apiBase = "/api/v1/admin";
 const active = ref("overview");
 const authenticated = ref(false);
@@ -36,14 +37,12 @@ const clientForm = ref({
   expires_at: null,
   long_lived: true,
 });
-
 const onlineCount = computed(
   () => clients.value.filter((client) => client.online).length,
 );
 const enabledCount = computed(
   () => clients.value.filter((client) => client.enabled).length,
 );
-
 async function request(path, options = {}) {
   const response = await fetch(`${apiBase}${path}`, {
     headers: {
@@ -58,18 +57,15 @@ async function request(path, options = {}) {
   if (!response.ok) throw new Error(body?.detail || "请求失败，请稍后重试");
   return body;
 }
-
 async function loadClients() {
   clients.value = await request("/clients");
 }
-
 function startClientRefresh() {
   window.clearInterval(clientRefreshTimer);
   clientRefreshTimer = window.setInterval(() => {
     if (authenticated.value) loadClients().catch(() => undefined);
   }, 5000);
 }
-
 function formatLastAuthentication(value) {
   if (!value) return "尚未连接";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -77,7 +73,6 @@ function formatLastAuthentication(value) {
     timeStyle: "short",
   }).format(new Date(value));
 }
-
 async function login() {
   loginError.value = "";
   try {
@@ -97,7 +92,6 @@ async function login() {
     loginError.value = error.message;
   }
 }
-
 async function createClient() {
   clientFormError.value = "";
   try {
@@ -126,14 +120,12 @@ async function createClient() {
     clientFormError.value = error.message;
   }
 }
-
 async function toggleClient(client) {
   await request(`/clients/${client.id}/enabled?enabled=${!client.enabled}`, {
     method: "POST",
   });
   await loadClients();
 }
-
 async function rotateClient(client) {
   const created = await request(`/clients/${client.id}/keys/rotate`, {
     method: "POST",
@@ -144,7 +136,6 @@ async function rotateClient(client) {
   keyOpen.value = true;
   await loadClients();
 }
-
 async function revealKey(client) {
   if (revealedKeys.value[client.id]) {
     const { [client.id]: _, ...remainingKeys } = revealedKeys.value;
@@ -156,7 +147,6 @@ async function revealKey(client) {
   });
   revealedKeys.value = { ...revealedKeys.value, [client.id]: result.key };
 }
-
 async function copyKey(client) {
   try {
     const key =
@@ -169,7 +159,6 @@ async function copyKey(client) {
     ElMessage.error("复制失败，请检查浏览器权限");
   }
 }
-
 async function logout() {
   await request("/session", { method: "DELETE" });
   authenticated.value = false;
@@ -177,7 +166,6 @@ async function logout() {
   revealedKeys.value = {};
   window.clearInterval(clientRefreshTimer);
 }
-
 onMounted(async () => {
   try {
     const session = await request("/session");
@@ -190,10 +178,8 @@ onMounted(async () => {
     authenticated.value = false;
   }
 });
-
 onBeforeUnmount(() => window.clearInterval(clientRefreshTimer));
 </script>
-
 <template>
   <main class="admin-root">
     <section v-if="!authenticated" class="login-stage">
@@ -230,7 +216,6 @@ onBeforeUnmount(() => window.clearInterval(clientRefreshTimer));
         </el-form>
       </el-card>
     </section>
-
     <el-container v-else class="admin-shell">
       <el-aside width="248px" class="side-panel">
         <div class="side-brand">
@@ -249,6 +234,10 @@ onBeforeUnmount(() => window.clearInterval(clientRefreshTimer));
           <el-menu-item index="clients"
             ><el-icon><Connection /></el-icon
             ><span>客户端管理</span></el-menu-item
+          >
+          <el-menu-item index="capabilities"
+            ><el-icon><MagicStick /></el-icon
+            ><span>能力管理</span></el-menu-item
           >
           <el-menu-item index="chat"
             ><el-icon><ChatDotRound /></el-icon
@@ -271,6 +260,8 @@ onBeforeUnmount(() => window.clearInterval(clientRefreshTimer));
                   ? "控制总览"
                   : active === "clients"
                     ? "客户端管理"
+                    : active === "capabilities"
+                      ? "能力管理"
                     : "Chat 工作区"
               }}
             </h2>
@@ -304,7 +295,6 @@ onBeforeUnmount(() => window.clearInterval(clientRefreshTimer));
               </p></el-card
             >
           </section>
-
           <section v-else-if="active === 'clients'" class="clients-page">
             <div class="toolbar">
               <div>
@@ -420,7 +410,10 @@ onBeforeUnmount(() => window.clearInterval(clientRefreshTimer));
               description="还没有客户端，创建后会在这里显示连接状态。"
             />
           </section>
-
+          <CapabilityManagement
+            v-else-if="active === 'capabilities'"
+            :request="request"
+          />
           <section v-else class="chat-page">
             <iframe
               title="SOMAI Chat 工作区"
@@ -430,7 +423,6 @@ onBeforeUnmount(() => window.clearInterval(clientRefreshTimer));
         </el-main>
       </el-container>
     </el-container>
-
     <el-dialog
       v-model="createOpen"
       title="创建机器人客户端"
@@ -480,7 +472,6 @@ onBeforeUnmount(() => window.clearInterval(clientRefreshTimer));
         >
       </template>
     </el-dialog>
-
     <el-dialog
       v-model="keyOpen"
       title="客户端 Key"

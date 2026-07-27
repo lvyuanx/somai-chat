@@ -47,6 +47,23 @@ def test_admin_menu_selects_the_internal_view() -> None:
     assert '@select="active = $event"' in app
 
 
+def test_admin_has_capability_management_cards() -> None:
+    directory = Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src"
+    app = (directory / "App.vue").read_text(encoding="utf-8")
+    capability = (directory / "CapabilityManagement.vue").read_text(encoding="utf-8")
+
+    assert 'index="capabilities"' in app
+    assert "<CapabilityManagement" in app
+    assert all(label in capability for label in ("查询天气", "查询时间", "联网搜索", "保存配置"))
+    assert "/capabilities" in capability
+
+
+def test_admin_vue_components_stay_within_size_limit() -> None:
+    directory = Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src"
+    for component in directory.glob("*.vue"):
+        assert len(component.read_text(encoding="utf-8").splitlines()) <= 500
+
+
 def test_client_management_uses_online_presence_cards() -> None:
     app = (Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue").read_text(encoding="utf-8")
 
@@ -81,9 +98,7 @@ def test_admin_request_handles_non_json_error_responses() -> None:
 
 
 def test_create_client_shows_the_server_error_in_its_dialog() -> None:
-    app = (
-        Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue"
-    ).read_text(encoding="utf-8")
+    app = (Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue").read_text(encoding="utf-8")
 
     assert "clientFormError" in app
     assert "clientFormError.value = error.message" in app
@@ -91,42 +106,32 @@ def test_create_client_shows_the_server_error_in_its_dialog() -> None:
 
 
 def test_create_dialog_does_not_render_template_delimiters_as_text() -> None:
-    app = (
-        Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue"
-    ).read_text(encoding="utf-8")
+    app = (Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue").read_text(encoding="utf-8")
 
-    assert 'show-icon />\n        ><el-form-item' not in app
+    assert "show-icon />\n        ><el-form-item" not in app
 
 
 def test_legacy_key_hint_does_not_compete_with_the_masked_key_row() -> None:
-    app = (
-        Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue"
-    ).read_text(encoding="utf-8")
+    app = (Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue").read_text(encoding="utf-8")
 
     assert "client-key-legacy" in app
     assert '<el-tag v-else type="warning" effect="plain">需轮换</el-tag>' not in app
 
 
 def test_key_visibility_icon_reflects_its_current_state() -> None:
-    app = (
-        Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue"
-    ).read_text(encoding="utf-8")
+    app = (Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue").read_text(encoding="utf-8")
 
     assert ':icon="revealedKeys[client.id] ? View : Hide"' in app
 
 
 def test_copying_a_revealed_key_confirms_success() -> None:
-    app = (
-        Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue"
-    ).read_text(encoding="utf-8")
+    app = (Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue").read_text(encoding="utf-8")
 
     assert 'ElMessage.success("Key 已复制")' in app
 
 
 def test_copying_a_hidden_key_does_not_require_revealing_it() -> None:
-    app = (
-        Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue"
-    ).read_text(encoding="utf-8")
+    app = (Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "App.vue").read_text(encoding="utf-8")
 
     assert 'await request(`/clients/${client.id}/key/reveal`, { method: "POST" })' in app
     assert ':disabled="!revealedKeys[client.id]"' not in app
