@@ -3,8 +3,49 @@ from pathlib import Path
 
 import pytest
 from pydantic import SecretStr, ValidationError
+from sqlalchemy.engine import make_url
 
 from somai_chat.core.config import Settings, get_settings, normalize_origin
+
+
+def test_settings_builds_database_url_from_split_fields() -> None:
+    settings = Settings(
+        _env_file=None,
+        openai_api_key="chat-secret",
+        openai_model="chat-model",
+        database_user="robot",
+        database_password="p@ss:/#word",
+        database_host="db.internal",
+        database_port=3307,
+        database_name="somai_chat",
+    )
+
+    url = make_url(settings.database_connection_url())
+
+    assert (url.drivername, url.username, url.password) == ("mysql+asyncmy", "robot", "p@ss:/#word")
+    assert (url.host, url.port, url.database) == ("db.internal", 3307, "somai_chat")
+
+
+def test_database_settings_have_documented_defaults() -> None:
+    settings = Settings(_env_file=None, openai_api_key="secret", openai_model="model")
+
+    assert settings.database_user == "somai"
+    assert settings.database_password.get_secret_value() == "change-me"
+    assert settings.database_host == "127.0.0.1"
+    assert settings.database_port == 3306
+    assert settings.database_name == "somai"
+
+
+@pytest.mark.parametrize("field", ["database_user", "database_password", "database_host", "database_name"])
+def test_settings_rejects_blank_database_fields(field: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, openai_api_key="secret", openai_model="model", **{field: "   "})
+
+
+@pytest.mark.parametrize("port", [0, 65536])
+def test_settings_rejects_invalid_database_port(port: int) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, openai_api_key="secret", openai_model="model", database_port=port)
 
 
 def test_settings_accept_openai_compatible_provider() -> None:
@@ -33,13 +74,15 @@ def test_settings_configures_database_and_administrator_credentials() -> None:
     settings = Settings(
         openai_api_key="chat-secret",
         openai_model="chat-model",
-        database_url="mysql+asyncmy://somai:pass@db:3306/somai",
+        database_user="somai",
+        database_password="pass",
+        database_host="db",
         admin_session_secret="session-secret",
         client_key_pepper="pepper-value",
         client_key_encryption_secret="encryption-value",
     )
 
-    assert settings.database_url.get_secret_value() == "mysql+asyncmy://somai:pass@db:3306/somai"
+    assert make_url(settings.database_connection_url()).host == "db"
     assert settings.admin_username == "admin"
     assert settings.admin_password.get_secret_value() == "123456"
     assert settings.admin_session_secret.get_secret_value() == "session-secret"
@@ -51,7 +94,7 @@ def test_settings_hides_administrator_secrets_in_repr() -> None:
     settings = Settings(
         openai_api_key="chat-secret",
         openai_model="chat-model",
-        database_url="mysql+asyncmy://somai:pass@db:3306/somai",
+        database_password="database-password",
         admin_password="admin-password",
         admin_session_secret="session-secret",
         client_key_pepper="pepper-value",
@@ -87,20 +130,14 @@ def test_settings_rejects_blank_capability_encryption_secret(secret: str) -> Non
         )
 
 
-def test_settings_hides_database_url_in_repr() -> None:
+def test_settings_hides_database_password_in_repr() -> None:
     settings = Settings(
         openai_api_key="chat-secret",
         openai_model="chat-model",
-        database_url="mysql+asyncmy://somai:database-password@db:3306/somai",
+        database_password="database-password",
     )
 
     assert "database-password" not in repr(settings)
-
-
-@pytest.mark.parametrize("database_url", ["", "   ", "postgresql+asyncpg://somai:pass@db/somai"])
-def test_settings_reject_invalid_database_url(database_url: str) -> None:
-    with pytest.raises(ValidationError):
-        Settings(openai_api_key="chat-secret", openai_model="chat-model", database_url=database_url)
 
 
 def test_production_rejects_default_administrator_password() -> None:
@@ -109,26 +146,23 @@ def test_production_rejects_default_administrator_password() -> None:
             environment="production",
             openai_api_key="chat-secret",
             openai_model="chat-model",
-            database_url="mysql+asyncmy://somai:pass@db:3306/somai",
+            database_password="database-password",
             admin_session_secret="production-session-secret",
             client_key_pepper="production-pepper",
         )
 
 
 @pytest.mark.parametrize(
-    "database_url",
-    [
-        "mysql+asyncmy://somai:change-me@127.0.0.1:3306/somai",
-        "mysql+asyncmy://somai:replace-me@db:3306/somai",
-    ],
+    "database_password",
+    ["change-me", "replace-me"],
 )
-def test_production_rejects_placeholder_database_url(database_url: str) -> None:
+def test_production_rejects_placeholder_database_password(database_password: str) -> None:
     with pytest.raises(ValidationError):
         Settings(
             environment="production",
             openai_api_key="chat-secret",
             openai_model="chat-model",
-            database_url=database_url,
+            database_password=database_password,
             admin_password="strong-password",
             admin_session_secret="production-session-secret",
             client_key_pepper="production-pepper",
@@ -142,7 +176,7 @@ def test_production_rejects_placeholder_administrator_secrets(placeholder: str) 
             environment="production",
             openai_api_key="chat-secret",
             openai_model="chat-model",
-            database_url="mysql+asyncmy://somai:pass@db:3306/somai",
+            database_password="database-password",
             admin_password="strong-password",
             admin_session_secret=placeholder,
             client_key_pepper="production-pepper",
@@ -156,7 +190,7 @@ def test_production_rejects_placeholder_capability_encryption_secret(placeholder
             environment="production",
             openai_api_key="chat-secret",
             openai_model="chat-model",
-            database_url="mysql+asyncmy://somai:pass@db:3306/somai",
+            database_password="database-password",
             admin_password="strong-password",
             admin_session_secret="production-session-secret",
             client_key_pepper="production-pepper",
@@ -394,3 +428,18 @@ def test_example_environment_documents_websocket_size_limit() -> None:
     assert "SOMAI_WEBSOCKET_TRANSPORT_MAX_BYTES=1048576" in (project_root / ".env.example").read_text()
     assert "SOMAI_HOST=0.0.0.0" in (project_root / ".env.example").read_text()
     assert "SOMAI_PORT=8000" in (project_root / ".env.example").read_text()
+
+
+def test_example_environment_uses_only_split_database_settings() -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    example = (project_root / ".env.example").read_text(encoding="utf-8")
+
+    for name in (
+        "SOMAI_DATABASE_USER",
+        "SOMAI_DATABASE_PASSWORD",
+        "SOMAI_DATABASE_HOST",
+        "SOMAI_DATABASE_PORT",
+        "SOMAI_DATABASE_NAME",
+    ):
+        assert f"{name}=" in example
+    assert "SOMAI_DATABASE_URL" not in example

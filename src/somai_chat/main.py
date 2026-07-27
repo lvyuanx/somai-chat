@@ -145,7 +145,7 @@ def create_app(
             if resolved_settings is None:
                 resolved_settings = get_settings()
             configure_logging(resolved_settings.log_level)
-            database_engine, sessions = create_session_factory(resolved_settings.database_url.get_secret_value())
+            database_engine, sessions = create_session_factory(resolved_settings.database_connection_url())
             owned_resources.append(database_engine)
             application.state.client_repository = ClientRepository(
                 sessions,

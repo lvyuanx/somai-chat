@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import URL
 
 _HOST_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _PRODUCTION_PLACEHOLDER_MARKERS = ("replace", "change-me", "your-secret", "placeholder")
@@ -66,7 +67,11 @@ class Settings(BaseSettings):
     openai_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
     openai_api_key: SecretStr
     openai_model: str = Field(min_length=1)
-    database_url: SecretStr = SecretStr("mysql+asyncmy://somai:change-me@127.0.0.1:3306/somai")
+    database_user: str = Field(default="somai", min_length=1)
+    database_password: SecretStr = SecretStr("change-me")
+    database_host: str = Field(default="127.0.0.1", min_length=1)
+    database_port: int = Field(default=3306, ge=1, le=65535)
+    database_name: str = Field(default="somai", min_length=1)
     admin_username: str = Field(default="admin", min_length=1)
     admin_password: SecretStr = SecretStr("123456")
     admin_session_secret: SecretStr = SecretStr("change-me")
@@ -122,16 +127,24 @@ class Settings(BaseSettings):
                 raise ValueError("Administrator secret must not be empty")
         return secret
 
-    @field_validator("database_url", mode="before")
+    @field_validator("database_user", "database_host", "database_name", mode="before")
     @classmethod
-    def validate_database_url(cls, value: object) -> object:
-        database_url = value.get_secret_value() if isinstance(value, SecretStr) else value
-        if not isinstance(database_url, str) or not database_url.strip():
-            raise ValueError("Database URL must not be empty")
-        parsed = urlsplit(database_url)
-        if parsed.scheme != "mysql+asyncmy" or parsed.hostname is None or parsed.path in {"", "/"}:
-            raise ValueError("Database URL must use mysql+asyncmy and include a database")
-        return database_url
+    def validate_database_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                raise ValueError("Database setting must not be empty")
+        return value
+
+    @field_validator("database_password", mode="before")
+    @classmethod
+    def validate_database_password(cls, value: object) -> object:
+        secret = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if isinstance(secret, str):
+            secret = secret.strip()
+            if not secret:
+                raise ValueError("Database password must not be empty")
+        return secret
 
     @field_validator("qweather_api_key", mode="before")
     @classmethod
@@ -202,7 +215,6 @@ class Settings(BaseSettings):
         if vision_configured and vision_incomplete:
             raise ValueError("Vision endpoint, API key, and model must be configured together")
         if self.environment == "production":
-            database_url = self.database_url.get_secret_value()
             administrator_secrets = (
                 self.admin_password.get_secret_value(),
                 self.admin_session_secret.get_secret_value(),
@@ -214,9 +226,21 @@ class Settings(BaseSettings):
                 raise ValueError("Production administrator password must not use the default value")
             if any(_is_placeholder_secret(secret) for secret in administrator_secrets):
                 raise ValueError("Production administrator secrets must not use placeholder values")
-            if _is_placeholder_secret(database_url):
-                raise ValueError("Production database URL must not use placeholder values")
+            if _is_placeholder_secret(self.database_password.get_secret_value()):
+                raise ValueError("Production database password must not use a placeholder value")
         return self
+
+    def database_connection_url(self) -> str:
+        """Build the async MySQL URL without exposing the password in Settings repr."""
+
+        return URL.create(
+            "mysql+asyncmy",
+            username=self.database_user,
+            password=self.database_password.get_secret_value(),
+            host=self.database_host,
+            port=self.database_port,
+            database=self.database_name,
+        ).render_as_string(hide_password=False)
 
 
 def _is_placeholder_secret(value: str) -> bool:

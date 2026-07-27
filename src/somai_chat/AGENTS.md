@@ -22,7 +22,7 @@ WebSocket 与包内静态调试台。
 
 ## 装配与数据流
 
-lifespan 成功时将 Settings、Runtime、能力服务和 ready 状态注入 `app.state`；依赖创建失败时应用仍能提供静态页和 liveness，但 readiness 为 503。生产与开发使用 MySQL 能力仓库，`test` 环境使用进程内仓库支持无需 MySQL 的真实传输测试。环境变量只补齐缺失能力记录。
+lifespan 成功时将 Settings、Runtime、能力服务和 ready 状态注入 `app.state`；依赖创建失败时应用仍能提供静态页和 liveness，但 readiness 为 503。组合根使用 Core 的拆分数据库字段生成连接 URL，Alembic 复用同一入口。生产与开发使用 MySQL 能力仓库，`test` 环境使用进程内仓库支持无需 MySQL 的真实传输测试。环境变量只补齐缺失能力记录。
 
 客户端文本依次经过 `api -> application -> agent -> providers`，模型消息块再反向转换为统一服务端信封。
 Application 不导入 Provider/OpenAI/httpx；组合根只注入 `Callable[[BaseException], bool]` 分类边界。

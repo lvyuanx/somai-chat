@@ -57,10 +57,11 @@
 必填项为 OpenAI 兼容 API Key 与模型名称，两者都会去除首尾空白并拒绝空值。
 服务监听地址/端口、模型基础 URL、和风天气专属 API Host、天气服务超时、生成参数、消息字符数、WebSocket 原始文本字节数
 及允许来源均在此集中定义。
-客户端管理使用 MySQL 异步连接 URL；管理员用户名默认为 `admin`、密码默认为 `123456`，会话密钥、客户端 Key
+MySQL 使用 `DATABASE_USER/PASSWORD/HOST/PORT/NAME` 拆分配置，并由 `URL.create()` 集中生成异步连接 URL；密码
+使用敏感类型保存。管理员用户名默认为 `admin`、密码默认为 `123456`，会话密钥、客户端 Key
 pepper 与加密密钥均使用敏感类型保存。`SOMAI_CAPABILITY_SECRET_ENCRYPTION_SECRET` 是专用于能力 API Key 的独立
 加密密钥，不得与客户端 Key 或其他密钥材料复用。开发环境可使用示例占位值；生产环境拒绝默认管理员密码和任何包含
-`replace`、`change-me`、`your-secret` 或 `placeholder` 的管理员密钥材料，包括能力加密密钥。
+`replace`、`change-me`、`your-secret` 或 `placeholder` 的管理员密钥材料和数据库密码，包括能力加密密钥。
 `max_websocket_message_bytes` 默认 32768，是应用解析前可恢复阈值；
 `websocket_transport_max_bytes` 默认 1048576，是 Uvicorn 紧急硬上限，必须为正且不小于应用阈值。
 `media_root` 默认是当前工作目录下的 `media`，图片上传服务在其下按 `uploads/<年>/<月>/<日>/` 保存图片；

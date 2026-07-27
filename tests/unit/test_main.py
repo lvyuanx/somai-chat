@@ -1,10 +1,42 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.engine import make_url
 
 from somai_chat import main as main_module
+from somai_chat.application.conversation import ConversationRuntime
 from somai_chat.core.config import Settings
+
+
+def test_application_uses_generated_database_connection_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, str] = {}
+
+    class Closeable:
+        async def close(self) -> None:
+            return None
+
+    def create_sessions(url: str) -> tuple[Closeable, object]:
+        captured["url"] = url
+        return Closeable(), object()
+
+    settings = Settings(
+        _env_file=None,
+        openai_api_key="secret",
+        openai_model="model",
+        database_user="robot",
+        database_password="p@ssword",
+        database_host="db",
+        database_name="chat",
+    )
+    monkeypatch.setattr(main_module, "create_session_factory", create_sessions)
+
+    with TestClient(main_module.create_app(settings=settings, runtime=cast(ConversationRuntime, object()))):
+        pass
+
+    url = make_url(captured["url"])
+    assert (url.username, url.password, url.host, url.database) == ("robot", "p@ssword", "db", "chat")
 
 
 def test_application_registers_capability_admin_routes() -> None:
@@ -41,7 +73,11 @@ def test_run_loads_dotenv_and_passes_server_settings_to_uvicorn(
         "SOMAI_ENVIRONMENT=production\n"
         "SOMAI_OPENAI_API_KEY=test-secret\n"
         "SOMAI_OPENAI_MODEL=test-model\n"
-        "SOMAI_DATABASE_URL=mysql+asyncmy://somai:pass@db:3306/somai\n"
+        "SOMAI_DATABASE_USER=somai\n"
+        "SOMAI_DATABASE_PASSWORD=pass\n"
+        "SOMAI_DATABASE_HOST=db\n"
+        "SOMAI_DATABASE_PORT=3306\n"
+        "SOMAI_DATABASE_NAME=somai\n"
         "SOMAI_ADMIN_PASSWORD=production-password\n"
         "SOMAI_ADMIN_SESSION_SECRET=production-session-secret\n"
         "SOMAI_CLIENT_KEY_PEPPER=production-pepper\n"
@@ -57,7 +93,11 @@ def test_run_loads_dotenv_and_passes_server_settings_to_uvicorn(
         "SOMAI_ENVIRONMENT",
         "SOMAI_OPENAI_API_KEY",
         "SOMAI_OPENAI_MODEL",
-        "SOMAI_DATABASE_URL",
+        "SOMAI_DATABASE_USER",
+        "SOMAI_DATABASE_PASSWORD",
+        "SOMAI_DATABASE_HOST",
+        "SOMAI_DATABASE_PORT",
+        "SOMAI_DATABASE_NAME",
         "SOMAI_ADMIN_PASSWORD",
         "SOMAI_ADMIN_SESSION_SECRET",
         "SOMAI_CLIENT_KEY_PEPPER",

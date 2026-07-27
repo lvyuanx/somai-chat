@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import os
 
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from somai_chat.admin.models import Base
+from somai_chat.core.config import get_settings
 
 config = context.config
-database_url = os.environ.get("SOMAI_DATABASE_URL")
-if database_url is not None:
-    config.set_main_option("sqlalchemy.url", database_url)
+database_url = get_settings().database_connection_url()
+config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 target_metadata = Base.metadata
 
 

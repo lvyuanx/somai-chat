@@ -41,9 +41,12 @@ make dev
 
 ```bash
 mysql -u root -p -e 'CREATE DATABASE somai_chat CHARACTER SET utf8mb4'
-SOMAI_DATABASE_URL='mysql+asyncmy://root:<password>@127.0.0.1:3306/somai_chat' \
-  uv run alembic upgrade head
+uv run alembic upgrade head
 ```
+
+Alembic 从 `.env` 读取 `SOMAI_DATABASE_USER/PASSWORD/HOST/PORT/NAME`。`SOMAI_HOST` 与 `SOMAI_PORT` 仅用于
+Uvicorn，不是数据库地址。旧 `SOMAI_DATABASE_URL` 不再支持；升级时将 URL 的用户名、密码、主机、端口和数据库名
+分别迁移到对应字段。
 
 开发环境默认管理员为 `admin` / `123456`；生产环境必须覆盖管理员密码、
 `SOMAI_ADMIN_SESSION_SECRET`、`SOMAI_CLIENT_KEY_PEPPER`、`SOMAI_CLIENT_KEY_ENCRYPTION_SECRET` 与
@@ -62,7 +65,11 @@ SOMAI_DATABASE_URL='mysql+asyncmy://root:<password>@127.0.0.1:3306/somai_chat' \
 | `SOMAI_OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容 HTTP 基地址 |
 | `SOMAI_OPENAI_API_KEY` | 必填 | API Key；使用 `SecretStr`，不得写入日志 |
 | `SOMAI_OPENAI_MODEL` | 必填 | 兼容端点提供的模型名 |
-| `SOMAI_DATABASE_URL` | 本地 MySQL 示例 | SQLAlchemy 异步 MySQL 连接 URL，使用 `mysql+asyncmy` 方言 |
+| `SOMAI_DATABASE_USER` | `somai` | MySQL 用户名 |
+| `SOMAI_DATABASE_PASSWORD` | `change-me` | MySQL 密码；生产环境不得使用占位值 |
+| `SOMAI_DATABASE_HOST` | `127.0.0.1` | MySQL Host，与 `SOMAI_HOST` 无关 |
+| `SOMAI_DATABASE_PORT` | `3306` | MySQL 端口 |
+| `SOMAI_DATABASE_NAME` | `somai` | MySQL 数据库名 |
 | `SOMAI_ADMIN_USERNAME` | `admin` | 后台超级管理员用户名 |
 | `SOMAI_ADMIN_PASSWORD` | `123456` | 后台超级管理员密码；生产环境必须覆盖默认值 |
 | `SOMAI_ADMIN_SESSION_SECRET` | 必填 | 管理员会话签名密钥；生产环境不得使用占位值 |
