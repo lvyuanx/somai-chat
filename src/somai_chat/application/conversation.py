@@ -10,6 +10,7 @@ from uuid import uuid4
 from langchain_core.messages import AIMessageChunk, HumanMessage, ToolMessage
 from langchain_core.messages.ai import UsageMetadata, add_usage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import BaseTool
 from pydantic import JsonValue
 
 from somai_chat.agent.graph import ConversationGraph
@@ -31,6 +32,10 @@ def _never_model_unavailable(error: BaseException) -> bool:
 
 class _CloseableAsyncIterator[T](AsyncIterator[T], Protocol):
     async def aclose(self) -> None: ...
+
+
+class ToolSnapshotProvider(Protocol):
+    def snapshot(self) -> Sequence[BaseTool]: ...
 
 
 @asynccontextmanager
@@ -94,10 +99,12 @@ class ConversationRuntime:
         graph: ConversationGraph,
         model_unavailable_classifier: ModelUnavailableClassifier = _never_model_unavailable,
         image_analyzer: ImageAnalyzer | None = None,
+        tool_provider: ToolSnapshotProvider | None = None,
     ) -> None:
         self._graph = graph
         self._model_unavailable_classifier = model_unavailable_classifier
         self._image_analyzer = image_analyzer
+        self._tool_provider = tool_provider
         self._text_normalizer = TextNormalizer()
 
     async def stream(
@@ -117,7 +124,8 @@ class ConversationRuntime:
         complete_content: list[str] = []
         usage: UsageMetadata | None = None
         camera_action: dict[str, str | int] | None = None
-        config: RunnableConfig = {"configurable": {"thread_id": conversation_id}}
+        runtime_tools = tuple(self._tool_provider.snapshot()) if self._tool_provider is not None else ()
+        config: RunnableConfig = {"configurable": {"thread_id": conversation_id, "runtime_tools": runtime_tools}}
         try:
             enriched_content = content
             if image_urls:

@@ -19,25 +19,25 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from somai_chat.admin.capability_repository import CapabilityRepository, MemoryCapabilityRepository
 from somai_chat.admin.database import create_session_factory
 from somai_chat.admin.presence import ClientPresenceRegistry
 from somai_chat.admin.repository import ClientRepository
 from somai_chat.agent.graph import build_conversation_graph
 from somai_chat.api.admin import router as admin_router
+from somai_chat.api.capabilities import router as capabilities_router
 from somai_chat.api.health import router as health_router
 from somai_chat.api.images import router as images_router
 from somai_chat.api.websocket import router as websocket_router
 from somai_chat.application.conversation import ConversationRuntime
+from somai_chat.capabilities.models import CapabilitySeed
+from somai_chat.capabilities.service import CapabilityService
 from somai_chat.core.config import Settings, get_settings
 from somai_chat.core.logging import configure_logging
 from somai_chat.device.tool import create_camera_capture_tool
 from somai_chat.providers.llm import create_chat_model, create_vision_model, is_model_provider_unavailable
-from somai_chat.time.tool import create_time_tool
 from somai_chat.vision.analyzer import VisionAnalyzer
 from somai_chat.vision.fetcher import HttpImageFetcher
-from somai_chat.weather.client import QWeatherClient
-from somai_chat.weather.tool import create_weather_tool
-from somai_chat.web.search import TavilyClient, create_web_search_tool
 
 logger = logging.getLogger(__name__)
 WEB_DIRECTORY = Path(__file__).with_name("web")
@@ -103,7 +103,36 @@ async def _close_resource(resource: object | None) -> None:
         await result
 
 
-def create_app(settings: Settings | None = None, runtime: ConversationRuntime | None = None) -> FastAPI:
+def _capability_seeds(settings: Settings) -> list[CapabilitySeed]:
+    return [
+        CapabilitySeed(
+            key="weather",
+            enabled=settings.qweather_api_host is not None and settings.qweather_api_key is not None,
+            configuration={
+                "api_host": str(settings.qweather_api_host or "https://devapi.qweather.com"),
+                "timeout_seconds": settings.weather_timeout_seconds,
+            },
+            api_key=settings.qweather_api_key.get_secret_value() if settings.qweather_api_key else None,
+        ),
+        CapabilitySeed(key="time", enabled=True, configuration={}, api_key=None),
+        CapabilitySeed(
+            key="web_search",
+            enabled=settings.tavily_api_key is not None,
+            configuration={
+                "api_host": str(settings.tavily_api_host),
+                "timeout_seconds": settings.tavily_timeout_seconds,
+                "max_results": settings.tavily_max_results,
+            },
+            api_key=settings.tavily_api_key.get_secret_value() if settings.tavily_api_key else None,
+        ),
+    ]
+
+
+def create_app(
+    settings: Settings | None = None,
+    runtime: ConversationRuntime | None = None,
+    capability_service: CapabilityService | None = None,
+) -> FastAPI:
     """Create an app whose production dependencies are initialized during lifespan."""
 
     @asynccontextmanager
@@ -111,6 +140,7 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
         owned_resources: list[object] = []
         resolved_settings = settings
         resolved_runtime = runtime
+        resolved_capability_service = capability_service
         try:
             if resolved_settings is None:
                 resolved_settings = get_settings()
@@ -124,31 +154,20 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
             )
             if resolved_runtime is None:
                 model = create_chat_model(resolved_settings)
-                if resolved_settings.qweather_api_host is None or resolved_settings.qweather_api_key is None:
-                    raise ValueError("QWeather configuration is required")
                 weather_http_client = httpx.AsyncClient(timeout=resolved_settings.weather_timeout_seconds)
-                weather_client = QWeatherClient(
-                    weather_http_client,
-                    api_host=str(resolved_settings.qweather_api_host),
-                    api_key=resolved_settings.qweather_api_key.get_secret_value(),
+                search_http_client = httpx.AsyncClient(timeout=resolved_settings.tavily_timeout_seconds)
+                owned_resources.extend([model, weather_http_client, search_http_client])
+                resolved_capability_service = CapabilityService(
+                    (
+                        MemoryCapabilityRepository()
+                        if resolved_settings.environment == "test"
+                        else CapabilityRepository(sessions)
+                    ),
+                    encryption_secret=resolved_settings.capability_secret_encryption_secret.get_secret_value(),
+                    weather_http_client=weather_http_client,
+                    search_http_client=search_http_client,
                 )
-                owned_resources.extend([model, weather_http_client])
-                tools = [create_weather_tool(weather_client), create_time_tool(), create_camera_capture_tool()]
-                if resolved_settings.tavily_api_key is not None:
-                    search_http_client = httpx.AsyncClient(
-                        base_url=str(resolved_settings.tavily_api_host).rstrip("/"),
-                        timeout=resolved_settings.tavily_timeout_seconds,
-                    )
-                    owned_resources.append(search_http_client)
-                    tools.append(
-                        create_web_search_tool(
-                            TavilyClient(
-                                search_http_client,
-                                api_key=resolved_settings.tavily_api_key.get_secret_value(),
-                                max_results=resolved_settings.tavily_max_results,
-                            )
-                        )
-                    )
+                await resolved_capability_service.initialize(_capability_seeds(resolved_settings))
                 image_analyzer = None
                 if resolved_settings.vision_model is not None:
                     vision_http_client = httpx.AsyncClient(timeout=resolved_settings.vision_timeout_seconds)
@@ -160,14 +179,17 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
                 resolved_runtime = ConversationRuntime(
                     build_conversation_graph(
                         model,
-                        tools=tools,
+                        tools=[create_camera_capture_tool()],
+                        dynamic_tools=True,
                     ),
                     model_unavailable_classifier=is_model_provider_unavailable,
                     image_analyzer=image_analyzer,
+                    tool_provider=resolved_capability_service,
                 )
             application.state.settings = resolved_settings
             application.state.media_root = resolved_settings.media_root
             application.state.runtime = resolved_runtime
+            application.state.capability_service = resolved_capability_service
             application.state.ready = True
         except Exception:
             configure_logging("INFO")
@@ -191,6 +213,7 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
     application.state.runtime = runtime
     application.state.ready = settings is not None and runtime is not None
     application.state.client_repository = None
+    application.state.capability_service = capability_service
     application.state.client_presence = ClientPresenceRegistry()
     application.add_middleware(
         SessionMiddleware,
@@ -200,6 +223,7 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
     )
     application.add_middleware(SecurityHeadersMiddleware)
     application.include_router(admin_router)
+    application.include_router(capabilities_router)
     application.include_router(health_router)
     application.include_router(images_router)
     application.include_router(websocket_router)

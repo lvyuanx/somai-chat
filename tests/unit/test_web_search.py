@@ -10,7 +10,8 @@ from somai_chat.web.search import TavilyClient, create_web_search_tool
 @pytest.mark.asyncio
 async def test_web_search_tool_posts_bounded_query_and_returns_sources() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url == "https://api.tavily.com/search"
+        assert request.url == "https://search.example/search"
+        assert request.extensions["timeout"]["read"] == 9
         assert request.headers["authorization"] == "Bearer tavily-secret"
         assert json.loads(request.content) == {
             "query": "最新的 AI 新闻",
@@ -29,10 +30,16 @@ async def test_web_search_tool_posts_bounded_query_and_returns_sources() -> None
             },
         )
 
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(handler), base_url="https://api.tavily.com"
-    ) as http_client:
-        tool = create_web_search_tool(TavilyClient(http_client, api_key="tavily-secret", max_results=2))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        tool = create_web_search_tool(
+            TavilyClient(
+                http_client,
+                api_host="https://search.example",
+                api_key="tavily-secret",
+                timeout_seconds=9,
+                max_results=2,
+            )
+        )
 
         assert isinstance(tool, BaseTool)
         result = await tool.ainvoke({"query": "最新的 AI 新闻"})

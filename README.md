@@ -46,7 +46,9 @@ SOMAI_DATABASE_URL='mysql+asyncmy://root:<password>@127.0.0.1:3306/somai_chat' \
 ```
 
 开发环境默认管理员为 `admin` / `123456`；生产环境必须覆盖管理员密码、
-`SOMAI_ADMIN_SESSION_SECRET`、`SOMAI_CLIENT_KEY_PEPPER` 与 `SOMAI_CLIENT_KEY_ENCRYPTION_SECRET`。后台入口为 `/admin`。
+`SOMAI_ADMIN_SESSION_SECRET`、`SOMAI_CLIENT_KEY_PEPPER`、`SOMAI_CLIENT_KEY_ENCRYPTION_SECRET` 与
+`SOMAI_CAPABILITY_SECRET_ENCRYPTION_SECRET`。后台入口为 `/admin`。天气、时间与联网搜索在能力管理页保存后从
+下一条消息开始生效；环境变量只首次补齐数据库中缺失的能力记录。
 新建或轮换的机器人 Key 使用独立加密主密钥保存，管理员可在客户端卡片中脱敏查看、显式展开和复制；迁移前的 Key
 无法恢复，需轮换。机器人建立 WebSocket 时必须发送
 `Authorization: Bearer somai_sk_<key-id>_<secret>`；管理员从 Chat 菜单进入时使用登录会话。
@@ -66,6 +68,7 @@ SOMAI_DATABASE_URL='mysql+asyncmy://root:<password>@127.0.0.1:3306/somai_chat' \
 | `SOMAI_ADMIN_SESSION_SECRET` | 必填 | 管理员会话签名密钥；生产环境不得使用占位值 |
 | `SOMAI_CLIENT_KEY_PEPPER` | 必填 | 客户端 Key 摘要 pepper；生产环境不得使用占位值 |
 | `SOMAI_CLIENT_KEY_ENCRYPTION_SECRET` | 必填 | 管理员查看 Key 的加密主密钥；生产环境不得使用占位值 |
+| `SOMAI_CAPABILITY_SECRET_ENCRYPTION_SECRET` | 必填 | 能力 API Key 的独立加密主密钥；生产环境不得使用占位值 |
 | `SOMAI_MODEL_TEMPERATURE` | `0.4` | 生成温度，范围 0–2 |
 | `SOMAI_MODEL_MAX_TOKENS` | `800` | 最大输出 token 数 |
 | `SOMAI_MODEL_TIMEOUT_SECONDS` | `30` | 单次模型请求超时秒数 |
@@ -76,11 +79,11 @@ SOMAI_DATABASE_URL='mysql+asyncmy://root:<password>@127.0.0.1:3306/somai_chat' \
 | `SOMAI_MEDIA_ROOT` | `./media` | 图片媒体根目录；上传图片保存到其下的 `uploads/<年>/<月>/<日>/` |
 | `SOMAI_MAX_IMAGE_URLS` | `4` | 单条消息可携带的图片 URL 上限 |
 | `SOMAI_MAX_IMAGE_DOWNLOAD_BYTES` | `8388608` | 服务端下载单张图片的字节上限 |
-| `SOMAI_QWEATHER_API_HOST` | 必填 | 和风天气控制台提供的专属 API Host |
-| `SOMAI_QWEATHER_API_KEY` | 必填 | 和风天气项目 API Key；使用 `SecretStr`，不得写入日志 |
+| `SOMAI_QWEATHER_API_HOST` | 可选 | 首次创建天气能力时导入的和风天气 API Host |
+| `SOMAI_QWEATHER_API_KEY` | 可选 | 首次创建天气能力时导入的 Key；未配置则天气保持关闭 |
 | `SOMAI_WEATHER_TIMEOUT_SECONDS` | `5` | 单次和风天气请求超时秒数 |
 | `SOMAI_TAVILY_API_HOST` | `https://api.tavily.com` | Tavily API 基地址 |
-| `SOMAI_TAVILY_API_KEY` | 可选 | Tavily API Key；配置后启用 `web_search` 工具，使用 `SecretStr` |
+| `SOMAI_TAVILY_API_KEY` | 可选 | 首次创建联网搜索能力时导入的 Key；未配置则搜索保持关闭 |
 | `SOMAI_TAVILY_TIMEOUT_SECONDS` | `10` | 单次 Tavily 请求超时秒数 |
 | `SOMAI_TAVILY_MAX_RESULTS` | `5` | 每次搜索最多返回的来源数量 |
 | `SOMAI_MAX_MESSAGE_LENGTH` | `8000` | 用户消息 Unicode code point 上限 |

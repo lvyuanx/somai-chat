@@ -17,10 +17,18 @@ class WeatherDateUnavailableError(ValueError):
 class QWeatherClient:
     """Resolve a city then retrieve its current QWeather conditions."""
 
-    def __init__(self, http_client: httpx.AsyncClient, *, api_host: str, api_key: str) -> None:
+    def __init__(
+        self,
+        http_client: httpx.AsyncClient,
+        *,
+        api_host: str,
+        api_key: str,
+        timeout_seconds: float = 5,
+    ) -> None:
         self._http_client = http_client
         self._api_host = api_host.rstrip("/")
         self._headers = {"X-QW-Api-Key": api_key}
+        self._timeout_seconds = timeout_seconds
 
     async def get_current_weather(self, city: str | None = None) -> dict[str, WeatherValue]:
         """Return normalized current weather, defaulting to Wuhan when city is omitted."""
@@ -31,6 +39,7 @@ class QWeatherClient:
             f"{self._api_host}/v7/weather/now",
             params={"location": location_id, "lang": "zh", "unit": "m"},
             headers=self._headers,
+            timeout=self._timeout_seconds,
         )
         response.raise_for_status()
         payload = self._successful_payload(response.json())
@@ -67,6 +76,7 @@ class QWeatherClient:
             f"{self._api_host}/v7/weather/3d",
             params={"location": self._required_text(location, "id"), "lang": "zh", "unit": "m"},
             headers=self._headers,
+            timeout=self._timeout_seconds,
         )
         response.raise_for_status()
         payload = self._successful_payload(response.json())
@@ -92,6 +102,7 @@ class QWeatherClient:
             f"{self._api_host}/geo/v2/city/lookup",
             params={"location": city, "lang": "zh", "number": 1},
             headers=self._headers,
+            timeout=self._timeout_seconds,
         )
         response.raise_for_status()
         payload = self._successful_payload(response.json())

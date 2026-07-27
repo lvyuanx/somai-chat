@@ -7,6 +7,8 @@
 
 ## 目录说明
 
+- `capability_repository.py`：能力配置的首次补齐、查询和行锁更新，只返回脱离数据库会话的 DTO。
+
 - `models.py`：SQLAlchemy 客户端、客户端 Key 与能力配置表的唯一模型定义。
 - `credentials.py`：生成 Key、计算认证摘要，以及使用独立配置密钥对完整 Key 加密与解密。
 - `presence.py`：进程内 WebSocket 连接注册表；每个客户端最多只能有一条通过 Key 认证的连接。

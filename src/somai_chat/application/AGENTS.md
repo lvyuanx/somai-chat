@@ -52,6 +52,9 @@ close 已开始后到达的 cancel 返回 `CANCEL_NOT_FOUND`，不得取得 owne
 
 ## 依赖关系与数据流
 
+`ConversationRuntime` 可注入中立的工具快照提供者。每轮打开 Graph 流之前读取一次快照，确保配置保存不会改变
+已经开始的一轮，下一条消息则立即使用新快照。
+
 本模块依赖 Agent 的 `ConversationGraph`、API 的 `ServerEvent` 和 Core 的错误契约；供应商分类能力仅以 callback 注入。
 API 层注入异步发送回调；用户输入进入 Graph，
 Graph 消息块转换为协议事件后经回调返回客户端。

@@ -13,6 +13,8 @@
 
 ## 核心接口
 
+`dynamic_tools=True` 时，模型节点和工具节点从本轮 Runnable 配置读取同一工具集合，关闭的能力不会暴露给模型。
+
 `build_conversation_graph(model, checkpointer=None, tools=())` 在无工具时创建 `START -> model -> END` 对话图；
 传入工具时创建 `START -> model -> tools -> model` 条件循环，
 并返回只公开 `ainvoke`、`astream` 和 `aget_state` 的 `ConversationGraph`。
@@ -42,8 +44,8 @@ MVP 的状态和并发保护仅存在于单个进程内，进程重启后丢失�
 
 ## 扩展方式与注意事项
 
-当前运行时支持文本多轮对话，以及由组合根按配置注入的 Tavily 互联网搜索、天气、中国标准时间和端侧摄像头等受控工具。
-互联网搜索仅在 `SOMAI_TAVILY_API_KEY` 配置后启用，结果带有来源 URL；时间工具只提供当前或未来相对日期的 `Asia/Shanghai` 时间。
+当前运行时支持文本多轮对话，以及由能力服务动态注入的 Tavily 搜索、天气、中国标准时间和始终注册的端侧摄像头工具。
+天气、时间与搜索以数据库为运行时配置来源；环境变量只在能力记录缺失时导入一次。
 视觉能力通过 `camera_capture` 工具请求端侧拍摄；工具调用结束当前轮，Application 将其转换为 `action.request`，端侧上传图片后使用带 `image_ids` 的新消息继续对话。
 不得在未收到图片观察结果时声称已经感知或执行。
 新增工具节点需保持消息状态和 `thread_id` 隔离语义，并补充真实图测试。

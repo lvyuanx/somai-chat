@@ -23,7 +23,8 @@
 
 `TavilyClient` 只接收组合根创建的 `httpx.AsyncClient` 和敏感 API Key，调用 Tavily `/search` 的 basic 模式，
 并将结果裁剪为标题、链接和摘要。`create_web_search_tool` 对空/过长查询及上游异常返回安全错误。
-搜索只有在 `Settings.tavily_api_key` 配置后才会由 `main` 注册；客户端生命周期由应用 lifespan 管理。
+搜索由能力服务按数据库开关动态注册；环境配置只首次补齐缺失记录。API Host、Key、超时和结果数属于每轮不可变
+快照，共享 HTTP 客户端生命周期由应用 lifespan 管理。
 
 - `index.html`：三栏语义结构、表单与可访问性标记。
 - `app.css`：工业设备控制台基础视觉、消息状态、组件样式和动效定义。

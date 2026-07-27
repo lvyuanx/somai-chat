@@ -10,14 +10,24 @@ from langchain_core.tools import BaseTool, tool
 class TavilyClient:
     """Provider-neutral surface for the Tavily search endpoint."""
 
-    def __init__(self, http_client: httpx.AsyncClient, *, api_key: str, max_results: int = 5) -> None:
+    def __init__(
+        self,
+        http_client: httpx.AsyncClient,
+        *,
+        api_key: str,
+        api_host: str = "https://api.tavily.com",
+        timeout_seconds: float = 10,
+        max_results: int = 5,
+    ) -> None:
         self._http_client = http_client
         self._api_key = api_key
+        self._api_host = api_host.rstrip("/")
+        self._timeout_seconds = timeout_seconds
         self._max_results = max_results
 
     async def search(self, query: str) -> Mapping[str, Any]:
         response = await self._http_client.post(
-            "/search",
+            f"{self._api_host}/search",
             headers={"Authorization": f"Bearer {self._api_key}"},
             json={
                 "query": query,
@@ -26,6 +36,7 @@ class TavilyClient:
                 "include_answer": False,
                 "include_raw_content": False,
             },
+            timeout=self._timeout_seconds,
         )
         response.raise_for_status()
         payload = response.json()

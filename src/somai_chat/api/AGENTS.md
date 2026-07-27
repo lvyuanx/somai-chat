@@ -18,6 +18,8 @@ WebSocket 在线状态和 Key 脱敏值。机器人 WebSocket 需要 Bearer Key�
 
 ## 目录说明
 
+- `capabilities.py`：能力列表、单卡原子保存和 CSRF 保护的 API Key 查看接口；列表不返回明文。
+
 - `protocol.py`：客户端事件模型、解析入口和服务端事件通用信封。
 - `health.py`：定义 `/health/live` 与 `/health/ready`。
 - `images.py`：提供 `/api/v1/images` 图片上传与按 `image_id` 读取接口，校验图片格式并生成短期流程使用的资源标识；默认保存到当前目录的

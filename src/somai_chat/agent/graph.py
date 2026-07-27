@@ -80,17 +80,29 @@ def build_conversation_graph(
     model: BaseChatModel,
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     tools: Sequence[BaseTool] = (),
+    dynamic_tools: bool = False,
 ) -> ConversationGraph:
     """Build the minimal stateful graph around an injected chat model."""
 
-    model_with_tools = model.bind_tools(list(tools)) if tools else model
+    def selected_tools(config: RunnableConfig) -> tuple[BaseTool, ...]:
+        configurable = config.get("configurable", {})
+        runtime_tools = configurable.get("runtime_tools", ()) if dynamic_tools else ()
+        if not isinstance(runtime_tools, Sequence) or not all(isinstance(item, BaseTool) for item in runtime_tools):
+            raise ValueError("runtime_tools must contain tools")
+        return (*tools, *cast(Sequence[BaseTool], runtime_tools))
 
     async def invoke_model(state: ConversationState, config: RunnableConfig) -> ConversationState:
-        response = await model_with_tools.ainvoke(
+        turn_tools = selected_tools(config)
+        bound_model = model.bind_tools(list(turn_tools)) if turn_tools else model
+        response = await bound_model.ainvoke(
             [SystemMessage(content=SOMAI_SYSTEM_PROMPT), *state["messages"]],
             config=config,
         )
         return {"messages": [response]}
+
+    async def invoke_tools(state: ConversationState, config: RunnableConfig) -> ConversationState:
+        node = ToolNode(list(selected_tools(config)))
+        return cast(ConversationState, await node.ainvoke(state, config=config))
 
     def route_after_tools(state: ConversationState) -> Literal["model", "end"]:
         last_message = state["messages"][-1] if state["messages"] else None
@@ -101,8 +113,8 @@ def build_conversation_graph(
     builder = StateGraph(ConversationState)
     builder.add_node("model", invoke_model)
     builder.add_edge(START, "model")
-    if tools:
-        builder.add_node("tools", ToolNode(list(tools)))
+    if tools or dynamic_tools:
+        builder.add_node("tools", invoke_tools)
         builder.add_conditional_edges("model", tools_condition, {"tools": "tools", END: END})
         builder.add_conditional_edges("tools", route_after_tools, {"model": "model", "end": END})
     else:

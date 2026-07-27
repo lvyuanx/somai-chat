@@ -11,6 +11,7 @@ from somai_chat.weather.tool import create_weather_tool
 async def test_weather_client_resolves_city_and_returns_current_conditions() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["X-QW-Api-Key"] == "weather-key"
+        assert request.extensions["timeout"]["read"] == 7
         if request.url.path == "/geo/v2/city/lookup":
             assert request.url.params["location"] == "北京"
             return httpx.Response(
@@ -38,7 +39,12 @@ async def test_weather_client_resolves_city_and_returns_current_conditions() -> 
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
-        client = QWeatherClient(http_client, api_host="https://example.qweatherapi.com", api_key="weather-key")
+        client = QWeatherClient(
+            http_client,
+            api_host="https://example.qweatherapi.com",
+            api_key="weather-key",
+            timeout_seconds=7,
+        )
         weather = await client.get_current_weather("北京")
 
     assert weather == {
