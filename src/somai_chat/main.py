@@ -30,6 +30,7 @@ from somai_chat.api.websocket import router as websocket_router
 from somai_chat.application.conversation import ConversationRuntime
 from somai_chat.core.config import Settings, get_settings
 from somai_chat.core.logging import configure_logging
+from somai_chat.device.tool import create_camera_capture_tool
 from somai_chat.providers.llm import create_chat_model, create_vision_model, is_model_provider_unavailable
 from somai_chat.time.tool import create_time_tool
 from somai_chat.vision.analyzer import VisionAnalyzer
@@ -142,12 +143,13 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
                 resolved_runtime = ConversationRuntime(
                     build_conversation_graph(
                         model,
-                        tools=[create_weather_tool(weather_client), create_time_tool()],
+                        tools=[create_weather_tool(weather_client), create_time_tool(), create_camera_capture_tool()],
                     ),
                     model_unavailable_classifier=is_model_provider_unavailable,
                     image_analyzer=image_analyzer,
                 )
             application.state.settings = resolved_settings
+            application.state.media_root = resolved_settings.media_root
             application.state.runtime = resolved_runtime
             application.state.ready = True
         except Exception:
@@ -168,6 +170,7 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
 
     application = FastAPI(lifespan=lifespan)
     application.state.settings = settings
+    application.state.media_root = settings.media_root if settings is not None else None
     application.state.runtime = runtime
     application.state.ready = settings is not None and runtime is not None
     application.state.client_repository = None

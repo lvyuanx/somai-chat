@@ -19,6 +19,16 @@ def test_settings_accept_openai_compatible_provider() -> None:
     assert settings.openai_model == "chat-model"
 
 
+def test_settings_configures_media_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    settings = Settings(openai_api_key="secret", openai_model="chat-model")
+
+    assert settings.media_root == tmp_path / "media"
+
+    custom = Settings(openai_api_key="secret", openai_model="chat-model", media_root=tmp_path / "assets")
+    assert custom.media_root == tmp_path / "assets"
+
+
 def test_settings_configures_database_and_administrator_credentials() -> None:
     settings = Settings(
         openai_api_key="chat-secret",

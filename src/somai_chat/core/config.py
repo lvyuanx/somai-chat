@@ -1,6 +1,7 @@
 import re
 from functools import lru_cache
 from ipaddress import ip_address
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -78,6 +79,7 @@ class Settings(BaseSettings):
     vision_api_key: SecretStr | None = None
     vision_model: str | None = None
     vision_timeout_seconds: float = Field(default=30, gt=0)
+    media_root: Path = Field(default_factory=lambda: Path.cwd() / "media")
     max_image_urls: int = Field(default=4, ge=1, le=4)
     max_image_download_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
     qweather_api_host: AnyHttpUrl | None = None

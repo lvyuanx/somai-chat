@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Protocol, cast
 from uuid import uuid4
 
-from langchain_core.messages import AIMessageChunk, HumanMessage
+from langchain_core.messages import AIMessageChunk, HumanMessage, ToolMessage
 from langchain_core.messages.ai import UsageMetadata, add_usage
 from langchain_core.runnables import RunnableConfig
 from pydantic import JsonValue
@@ -16,6 +16,7 @@ from somai_chat.agent.graph import ConversationGraph
 from somai_chat.api.protocol import ServerEvent
 from somai_chat.application.text_normalizer import TextNormalizer
 from somai_chat.core.errors import ErrorCode, SomaiError
+from somai_chat.device.tool import parse_camera_capture_result
 from somai_chat.vision.analyzer import ImageAnalyzer
 
 SendEvent = Callable[[ServerEvent], Awaitable[None]]
@@ -115,6 +116,7 @@ class ConversationRuntime:
         )
         complete_content: list[str] = []
         usage: UsageMetadata | None = None
+        camera_action: dict[str, str | int] | None = None
         config: RunnableConfig = {"configurable": {"thread_id": conversation_id}}
         try:
             enriched_content = content
@@ -133,6 +135,10 @@ class ConversationRuntime:
             )
             async with _managed_stream(graph_stream):
                 async for message, _metadata in graph_stream:
+                    if isinstance(message, ToolMessage) and camera_action is None:
+                        action = parse_camera_capture_result(message.content)
+                        if action is not None:
+                            camera_action = action
                     if not isinstance(message, AIMessageChunk):
                         continue
                     delta = self._text_normalizer.normalize_delta(_chunk_text(message))
@@ -161,6 +167,15 @@ class ConversationRuntime:
                 "Unable to generate a response",
             ) from error
 
+        if camera_action is not None:
+            yield ServerEvent.create(
+                "action.request",
+                {
+                    **camera_action,
+                    "response_id": response_id,
+                    "message_id": message_id,
+                },
+            )
         yield ServerEvent.create(
             "response.completed",
             {

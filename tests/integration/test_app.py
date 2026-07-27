@@ -10,6 +10,7 @@ import sys
 import threading
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any, cast
 from uuid import uuid4
@@ -126,12 +127,47 @@ def test_health_live_and_ready_with_injected_dependencies() -> None:
     assert response.json() == {"status": "ready"}
 
 
-def test_image_upload_returns_same_origin_url(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SOMAI_UPLOAD_DIRECTORY", str(tmp_path))
-    with app_client() as client:
-        response = client.post("/api/v1/images", files={"image": ("sample.png", b"not-a-real-png", "image/png")})
+def test_image_upload_returns_same_origin_url() -> None:
+    from PIL import Image
 
-    assert response.status_code == 400
+    image_bytes = io.BytesIO()
+    Image.new("RGB", (2, 2), "red").save(image_bytes, format="PNG")
+    with app_client() as client:
+        response = client.post("/api/v1/images", files={"image": ("sample.png", image_bytes.getvalue(), "image/png")})
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["image_id"].startswith("img_")
+    assert payload["image_url"] == f"/api/v1/images/{payload['image_id']}"
+    assert payload["media_type"] == "image/png"
+
+
+def test_image_id_can_be_used_to_read_uploaded_image() -> None:
+    from PIL import Image
+
+    image_bytes = io.BytesIO()
+    Image.new("RGB", (2, 2), "blue").save(image_bytes, format="JPEG")
+    with app_client() as client:
+        upload = client.post("/api/v1/images", files={"image": ("sample.jpg", image_bytes.getvalue(), "image/jpeg")})
+        image_id = upload.json()["image_id"]
+        response = client.get(f"/api/v1/images/{image_id}")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+
+
+def test_image_upload_uses_dated_media_root_by_default(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from PIL import Image
+
+    image_bytes = io.BytesIO()
+    Image.new("RGB", (2, 2), "green").save(image_bytes, format="PNG")
+    monkeypatch.chdir(tmp_path)
+    with app_client() as client:
+        response = client.post("/api/v1/images", files={"image": ("sample.png", image_bytes.getvalue(), "image/png")})
+
+    image_id = response.json()["image_id"]
+    today = datetime.now().strftime("%Y/%m/%d")
+    assert (tmp_path / "media" / "uploads" / today / f"{image_id}.png").is_file()
 
 
 def test_readiness_does_not_call_runtime() -> None:
@@ -164,6 +200,36 @@ def test_websocket_streams_uniform_ordered_response() -> None:
         "response.completed",
     ]
     for event in [ready, *events]:
+        assert set(event) == {"type", "event_id", "timestamp", "data"}
+        assert event["event_id"].startswith("evt_")
+        assert event["timestamp"].endswith("Z")
+
+
+def test_websocket_replies_when_camera_permission_is_denied() -> None:
+    with app_client() as client, client.websocket_connect("/api/v1/chat/ws/conv_camera") as socket:
+        socket.receive_json()
+        socket.send_json(
+            {
+                "type": "action.result",
+                "data": {
+                    "action": "camera.capture",
+                    "request_id": "cam_req_001",
+                    "response_id": "resp_001",
+                    "message_id": "msg_001",
+                    "status": "denied",
+                    "error_code": "CAMERA_PERMISSION_DENIED",
+                },
+            }
+        )
+        events = [socket.receive_json() for _ in range(3)]
+
+    assert [event["type"] for event in events] == [
+        "response.started",
+        "response.delta",
+        "response.completed",
+    ]
+    assert events[-1]["data"]["content"] == "抱歉，我没有获得摄像头权限，暂时无法查看。"
+    for event in events:
         assert set(event) == {"type", "event_id", "timestamp", "data"}
         assert event["event_id"].startswith("evt_")
         assert event["timestamp"].endswith("Z")

@@ -30,7 +30,7 @@ def test_application_registers_time_tool_with_conversation_graph(monkeypatch: py
     with TestClient(main_module.create_app(settings=settings)):
         pass
 
-    assert {tool.name for tool in captured["tools"]} == {"get_current_time", "get_weather"}
+    assert {tool.name for tool in captured["tools"]} == {"camera_capture", "get_current_time", "get_weather"}
 
 
 def test_run_loads_dotenv_and_passes_server_settings_to_uvicorn(

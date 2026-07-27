@@ -54,6 +54,38 @@ def test_parse_message_create_accepts_http_and_https_image_urls() -> None:
     assert event.data.image_urls == ["http://images.example.test/one.jpg", "https://images.example.test/two.png"]
 
 
+def test_parse_message_create_accepts_uploaded_image_ids() -> None:
+    event = parse_client_event(
+        {
+            "type": "message.create",
+            "data": {"message_id": "msg_image", "content": "look", "image_ids": ["img_abc123"]},
+        },
+        max_message_length=100,
+    )
+
+    assert event.data.image_ids == ["img_abc123"]
+
+
+def test_parse_action_result_accepts_camera_failure() -> None:
+    event = parse_client_event(
+        {
+            "type": "action.result",
+            "data": {
+                "action": "camera.capture",
+                "request_id": "cam_req_001",
+                "response_id": "resp_001",
+                "message_id": "msg_001",
+                "status": "denied",
+                "error_code": "CAMERA_PERMISSION_DENIED",
+            },
+        },
+        max_message_length=100,
+    )
+
+    assert event.data.status == "denied"
+    assert event.data.error_code == "CAMERA_PERMISSION_DENIED"
+
+
 @pytest.mark.parametrize(
     "image_urls",
     [[], ["ftp://images.example.test/a.jpg"], ["not-a-url"], ["https://x.test/a"] * 5],

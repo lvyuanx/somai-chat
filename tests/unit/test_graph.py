@@ -16,6 +16,7 @@ from pydantic import PrivateAttr
 from somai_chat.agent.graph import build_conversation_graph
 from somai_chat.agent.prompts import SOMAI_SYSTEM_PROMPT
 from somai_chat.agent.state import ConversationState
+from somai_chat.device.tool import create_camera_capture_tool
 
 
 class RecordingChatModel(BaseChatModel):
@@ -93,6 +94,55 @@ class WeatherToolCallingChatModel(RecordingChatModel):
                 tool_calls=[{"name": "get_weather", "args": {}, "id": "weather-call"}],
             )
         return ChatResult(generations=[ChatGeneration(message=reply)])
+
+
+class CameraToolCallingChatModel(RecordingChatModel):
+    _tools: list[BaseTool] = PrivateAttr(default_factory=list)
+
+    def bind_tools(self, tools: list[BaseTool], **kwargs: Any) -> CameraToolCallingChatModel:
+        del kwargs
+        self._tools = tools
+        return self
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del stop, run_manager, kwargs
+        self._calls.append(list(messages))
+        return ChatResult(
+            generations=[
+                ChatGeneration(
+                    message=AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "camera_capture",
+                                "args": {"camera": "back", "reason": "查看手中物体"},
+                                "id": "camera-call",
+                            }
+                        ],
+                    )
+                )
+            ]
+        )
+
+
+class RecoveringCameraToolCallingChatModel(CameraToolCallingChatModel):
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        if self._calls:
+            self._calls.append(list(messages))
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content="可以继续回答。"))])
+        return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
 
 def graph_config(thread_id: str) -> RunnableConfig:
@@ -252,3 +302,27 @@ async def test_graph_runs_requested_weather_tool_before_final_response() -> None
 
     assert result["messages"][-1].content == "武汉今天晴朗。"
     assert any(isinstance(message, ToolMessage) for message in result["messages"])
+
+
+@pytest.mark.asyncio
+async def test_graph_stops_after_camera_capture_request_without_followup_model_call() -> None:
+    model = CameraToolCallingChatModel()
+    graph = build_conversation_graph(model, tools=[create_camera_capture_tool()])
+
+    result = await graph.ainvoke(user_input("看看我手上拿的是什么"), config=graph_config("camera-thread"))
+
+    assert len(model.calls) == 1
+    assert isinstance(result["messages"][-1], ToolMessage)
+    assert '"somai_action":"camera.capture"' in result["messages"][-1].content
+
+
+@pytest.mark.asyncio
+async def test_graph_can_continue_with_a_new_message_after_camera_request() -> None:
+    model = RecoveringCameraToolCallingChatModel()
+    graph = build_conversation_graph(model, tools=[create_camera_capture_tool()])
+    config = graph_config("camera-restart-thread")
+
+    await graph.ainvoke(user_input("看看我手里拿的是什么"), config=config)
+    result = await graph.ainvoke(user_input("端侧刚刚重启了，我们继续聊文字问题"), config=config)
+
+    assert result["messages"][-1].content == "可以继续回答。"

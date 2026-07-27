@@ -62,6 +62,8 @@ pepper 均使用敏感类型保存。开发环境可使用示例占位值；生�
 `change-me`、`your-secret` 或 `placeholder` 的管理员密钥材料。
 `max_websocket_message_bytes` 默认 32768，是应用解析前可恢复阈值；
 `websocket_transport_max_bytes` 默认 1048576，是 Uvicorn 紧急硬上限，必须为正且不小于应用阈值。
+`media_root` 默认是当前工作目录下的 `media`，图片上传服务在其下按 `uploads/<年>/<月>/<日>/` 保存图片；
+可通过 `SOMAI_MEDIA_ROOT` 配置为其他目录。
 `python -m somai_chat.main` 先解析同一份 Settings，再把 host、port、开发环境 reload 状态及
 `websocket_transport_max_bytes` 传给 Uvicorn。
 允许来源只接受不含路径、查询、片段和用户信息的 HTTP/HTTPS Origin；主机转小写，

@@ -55,6 +55,7 @@ class MessageCreateData(ProtocolModel):
     message_id: Identifier
     content: str
     image_urls: list[str] | None = None
+    image_ids: list[Identifier] | None = None
 
     @field_validator("content")
     @classmethod
@@ -74,10 +75,46 @@ class MessageCreateData(ProtocolModel):
                 raise ValueError("Image URLs must be absolute HTTP URLs")
         return values
 
+    @field_validator("image_ids")
+    @classmethod
+    def validate_image_ids(cls, values: list[Identifier] | None) -> list[Identifier] | None:
+        if values is not None and not values:
+            raise ValueError("Image ID list must not be empty")
+        return values
+
+    @model_validator(mode="after")
+    def validate_image_reference_exclusivity(self) -> Self:
+        if self.image_urls is not None and self.image_ids is not None:
+            raise ValueError("Use image URLs or image IDs, not both")
+        return self
+
 
 class MessageCreate(ProtocolModel):
     type: Literal["message.create"]
     data: MessageCreateData
+
+
+class ActionResultData(ProtocolModel):
+    action: Literal["camera.capture"]
+    request_id: Identifier
+    response_id: Identifier
+    message_id: Identifier
+    status: Literal["success", "denied", "failed", "cancelled"]
+    error_code: Identifier | None = None
+    image_ids: list[Identifier] | None = None
+
+    @model_validator(mode="after")
+    def validate_result(self) -> Self:
+        if self.status == "success" and (self.image_ids is None or not self.image_ids):
+            raise ValueError("Successful camera action requires image IDs")
+        if self.status != "success" and self.image_ids is not None:
+            raise ValueError("Failed camera action must not include image IDs")
+        return self
+
+
+class ActionResult(ProtocolModel):
+    type: Literal["action.result"]
+    data: ActionResultData
 
 
 class ResponseCancelData(ProtocolModel):
@@ -99,7 +136,7 @@ class Ping(ProtocolModel):
 
 
 type ClientEvent = Annotated[
-    MessageCreate | ResponseCancel | Ping,
+    MessageCreate | ActionResult | ResponseCancel | Ping,
     Field(discriminator="type"),
 ]
 
@@ -119,7 +156,10 @@ def parse_client_event(payload: object, max_message_length: int, max_image_urls:
     invalid_image_urls = isinstance(event, MessageCreate) and event.data.image_urls is not None and (
         len(event.data.image_urls) > max_image_urls
     )
-    if event is None or invalid_content or invalid_image_urls:
+    invalid_image_ids = isinstance(event, MessageCreate) and event.data.image_ids is not None and (
+        len(event.data.image_ids) > max_image_urls
+    )
+    if event is None or invalid_content or invalid_image_urls or invalid_image_ids:
         raise SomaiError(ErrorCode.INVALID_MESSAGE, "Invalid client event")
     return event
 

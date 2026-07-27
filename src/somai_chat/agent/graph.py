@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator, Sequence
 from typing import Any, Literal, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AnyMessage, SystemMessage
+from langchain_core.messages import AnyMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -17,6 +17,7 @@ from langgraph.types import StateSnapshot
 
 from somai_chat.agent.prompts import SOMAI_SYSTEM_PROMPT
 from somai_chat.agent.state import ConversationState
+from somai_chat.device.tool import parse_camera_capture_result
 
 CompiledConversationGraph = CompiledStateGraph[ConversationState, None, ConversationState, ConversationState]
 MessageStreamItem = tuple[AnyMessage, dict[str, Any]]
@@ -91,13 +92,19 @@ def build_conversation_graph(
         )
         return {"messages": [response]}
 
+    def route_after_tools(state: ConversationState) -> Literal["model", "end"]:
+        last_message = state["messages"][-1] if state["messages"] else None
+        if isinstance(last_message, ToolMessage) and parse_camera_capture_result(last_message.content) is not None:
+            return "end"
+        return "model"
+
     builder = StateGraph(ConversationState)
     builder.add_node("model", invoke_model)
     builder.add_edge(START, "model")
     if tools:
         builder.add_node("tools", ToolNode(list(tools)))
         builder.add_conditional_edges("model", tools_condition, {"tools": "tools", END: END})
-        builder.add_edge("tools", "model")
+        builder.add_conditional_edges("tools", route_after_tools, {"model": "model", "end": END})
     else:
         builder.add_edge("model", END)
     saver = checkpointer if checkpointer is not None else InMemorySaver()

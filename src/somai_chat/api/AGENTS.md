@@ -20,6 +20,8 @@ WebSocket 在线状态和 Key 脱敏值。机器人 WebSocket 需要 Bearer Key�
 
 - `protocol.py`：客户端事件模型、解析入口和服务端事件通用信封。
 - `health.py`：定义 `/health/live` 与 `/health/ready`。
+- `images.py`：提供 `/api/v1/images` 图片上传与按 `image_id` 读取接口，校验图片格式并生成短期流程使用的资源标识；默认保存到当前目录的
+  `media/uploads/<年>/<月>/<日>/`。
 - `admin.py`：定义管理员会话与客户端管理 API，客户端列表合并进程内连接注册表的在线状态。
 - `websocket.py`：定义 `/api/v1/chat/ws/{conversation_id}` 连接与接收循环，并在 Key 认证连接的生命周期内更新在线状态。
 - `__init__.py`：包标识，不隐式导出协议实现。
@@ -27,9 +29,17 @@ WebSocket 在线状态和 Key 脱敏值。机器人 WebSocket 需要 Bearer Key�
 ## 核心模型
 
 - `MessageCreate`：携带客户端消息标识与文本内容。
+- `ActionResult`：携带端侧 `camera.capture` 的成功、拒绝、失败或取消结果；失败结果由 WebSocket 直接映射为用户可见的安全回复。
 - `ResponseCancel`：携带待取消的响应标识。
 - `Ping`：可携带关联标识的存活探测事件。
 - `ServerEvent`：包含 `type`、`event_id`、`timestamp` 和 `data` 的服务端通用信封。
+
+图片上传接口 `POST /api/v1/images` 接收 multipart 图片，返回 `image_id`、同源 `image_url`、媒体类型和字节数；
+读取接口使用 `GET /api/v1/images/{image_id}`。对话消息可使用 `image_ids` 引用已上传图片，WebSocket 层将其解析为
+服务端视觉分析器可读取的本机回环地址；`image_ids` 与旧的 `image_urls` 不能同时出现。服务端生成的图片 ID 不使用端侧
+WebSocket Host 拼接 URL，避免局域网私有地址被视觉抓取器误判为 SSRF。
+摄像头工具调用会产生 `action.request` 服务端事件，事件数据包含 `action=camera.capture`、`request_id`、摄像头方向、
+拍摄数量和原因；端侧完成拍摄上传后，以带 `image_ids` 的新 `message.create` 继续对话。
 
 ## 核心接口
 

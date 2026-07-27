@@ -7,7 +7,7 @@ from typing import Any, cast
 import pytest
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 
 from somai_chat.agent.graph import ConversationGraph, build_conversation_graph
@@ -68,6 +68,24 @@ class RecordingGraph:
         del kwargs
         self.content = input["messages"][0].content
         yield AIMessageChunk(content="已看到"), {}
+
+
+class CameraActionGraph:
+    def __init__(self) -> None:
+        self.finished = False
+
+    async def astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[tuple[ToolMessage, dict[str, Any]]]:
+        del args, kwargs
+        try:
+            yield ToolMessage(
+                content=(
+                    '{"somai_action":"camera.capture","request_id":"cam_req_1","camera":"back",'
+                    '"count":1,"reason":"查看用户手中的物体"}'
+                ),
+                tool_call_id="camera-call",
+            ), {}
+        finally:
+            self.finished = True
 
 
 class RecordingImageAnalyzer:
@@ -180,6 +198,34 @@ async def test_runtime_uses_vision_only_for_image_turns_and_keeps_chat_graph_tex
 
     assert analyzer.calls == [("图片里是什么？", ("http://images.example.test/cup.jpg",))]
     assert graph.content == "图片里是什么？\n\n[UNTRUSTED_IMAGE_OBSERVATION]\n一只杯子\n[/UNTRUSTED_IMAGE_OBSERVATION]"
+
+
+@pytest.mark.asyncio
+async def test_runtime_emits_camera_action_request_from_tool_result() -> None:
+    graph = CameraActionGraph()
+    runtime = ConversationRuntime(cast(ConversationGraph, graph))
+
+    events = [
+        event
+        async for event in runtime.stream(
+            "conv-1",
+            "msg-1",
+            "看看我手里是什么",
+            response_id="resp-camera",
+        )
+    ]
+
+    assert [event.type for event in events] == ["response.started", "action.request", "response.completed"]
+    assert events[1].data == {
+        "action": "camera.capture",
+        "request_id": "cam_req_1",
+        "response_id": "resp-camera",
+        "message_id": "msg-1",
+        "camera": "back",
+        "count": 1,
+        "reason": "查看用户手中的物体",
+    }
+    assert graph.finished is True
 
 
 @pytest.mark.asyncio

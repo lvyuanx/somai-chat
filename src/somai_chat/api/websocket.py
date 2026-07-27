@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from typing import cast
 from uuid import uuid4
 
@@ -11,7 +12,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from somai_chat.admin.presence import ClientPresenceRegistry
 from somai_chat.admin.repository import ClientRepository
-from somai_chat.api.protocol import MessageCreate, Ping, ResponseCancel, ServerEvent, parse_client_event
+from somai_chat.api.protocol import ActionResult, MessageCreate, Ping, ResponseCancel, ServerEvent, parse_client_event
 from somai_chat.application.conversation import ConversationRuntime, ConversationSession
 from somai_chat.core.config import Settings, normalize_origin
 from somai_chat.core.errors import ErrorCode, SomaiError
@@ -37,6 +38,46 @@ def _error_event(
 
 def _invalid_message() -> SomaiError:
     return SomaiError(ErrorCode.INVALID_MESSAGE, "Invalid client event")
+
+
+def _uploaded_image_urls(image_ids: list[str], server_port: int) -> tuple[str, ...]:
+    return tuple(f"http://127.0.0.1:{server_port}/api/v1/images/{image_id}" for image_id in image_ids)
+
+
+def _camera_failure_message(status: str, error_code: str | None) -> str:
+    messages = {
+        "CAMERA_UNAVAILABLE": "抱歉，当前设备摄像头不可用，暂时无法查看。",
+        "CAMERA_PERMISSION_DENIED": "抱歉，我没有获得摄像头权限，暂时无法查看。",
+        "CAMERA_CAPTURE_FAILED": "抱歉，这次拍照失败了，暂时无法查看。",
+        "CAMERA_CAPTURE_CANCELLED": "好的，我已取消这次拍照。",
+        "IMAGE_UPLOAD_FAILED": "抱歉，图片上传失败了，暂时无法识别。",
+        "IMAGE_UPLOAD_TIMEOUT": "抱歉，图片上传超时了，暂时无法识别。",
+    }
+    if error_code in messages:
+        return messages[error_code]
+    if status == "denied":
+        return messages["CAMERA_PERMISSION_DENIED"]
+    if status == "cancelled":
+        return messages["CAMERA_CAPTURE_CANCELLED"]
+    return "抱歉，我这次没能完成拍照，暂时无法查看。"
+
+
+async def _send_camera_failure(send: Callable[[ServerEvent], Awaitable[None]], result: ActionResult) -> None:
+    data = result.data
+    content = _camera_failure_message(data.status, data.error_code)
+    await send(
+        ServerEvent.create(
+            "response.started", {"response_id": data.response_id, "message_id": data.message_id}
+        )
+    )
+    await send(
+        ServerEvent.create("response.delta", {"response_id": data.response_id, "delta": content})
+    )
+    await send(
+        ServerEvent.create(
+            "response.completed", {"response_id": data.response_id, "content": content, "usage": None}
+        )
+    )
 
 
 def _object_without_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -172,7 +213,13 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
                 event = parse_client_event(payload, settings.max_message_length, settings.max_image_urls)
                 if isinstance(event, MessageCreate):
                     message_id = event.data.message_id
-                    session.start(event.data.message_id, event.data.content, tuple(event.data.image_urls or ()))
+                    image_urls = tuple(event.data.image_urls or ())
+                    if event.data.image_ids is not None:
+                        image_urls = _uploaded_image_urls(event.data.image_ids, settings.port)
+                    session.start(event.data.message_id, event.data.content, image_urls)
+                elif isinstance(event, ActionResult):
+                    if event.data.status != "success":
+                        await _send_camera_failure(raw_send, event)
                 elif isinstance(event, ResponseCancel):
                     response_id = event.data.response_id
                     await session.cancel(event.data.response_id)
