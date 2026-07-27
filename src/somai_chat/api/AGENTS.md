@@ -64,7 +64,8 @@ WebSocket Host 拼接 URL，避免局域网私有地址被视觉抓取器误判�
 
 WebSocket 先完成握手，再校验 `conversation_id`、运行时就绪状态和可选 Origin，
 从而让真实客户端收到稳定的 1008 或 1013 WebSocket 关闭码，而不是 HTTP 403。
-设备客户端未发送 Origin 时允许连接；浏览器 Origin 必须精确匹配 `Settings.allowed_origins`。
+设备客户端未发送 Origin 时允许连接；浏览器 Origin 必须精确匹配 `Settings.allowed_origins`
+或当前请求的同源 `scheme://host`。
 Origin 先按 Core 的标准规则规范化，畸形值按策略关闭。
 校验通过后先发送 `conversation.ready`，其中包含会话 ID、非敏感模型名称、消息 code point 上限和
 WebSocket 应用可恢复字节上限（不下发传输紧急硬上限）；随后创建的单连接 Session 在后台生成，

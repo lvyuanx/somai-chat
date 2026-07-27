@@ -440,6 +440,24 @@ def test_websocket_origin_policy_rejects_unconfigured_origin() -> None:
     assert captured.value.code == 1008
 
 
+def test_administrator_websocket_allows_current_same_origin_host() -> None:
+    settings = Settings(
+        environment="development",
+        openai_api_key=SecretStr("test-secret"),
+        openai_model="test-model",
+    )
+    app = create_app(settings=settings, runtime=ConversationRuntime(cast(ConversationGraph, StreamingGraph())))
+
+    with TestClient(app, base_url="http://localhost:50117") as client:
+        login = client.post("/api/v1/admin/session", json={"username": "admin", "password": "123456"})
+        assert login.status_code == 200
+        with client.websocket_connect(
+            "ws://localhost:50117/api/v1/chat/ws/conv_admin_embed",
+            headers={"origin": "http://localhost:50117"},
+        ) as socket:
+            assert socket.receive_json()["type"] == "conversation.ready"
+
+
 def test_websocket_origin_policy_rejects_malformed_origin() -> None:
     with app_client() as client:
         with client.websocket_connect(

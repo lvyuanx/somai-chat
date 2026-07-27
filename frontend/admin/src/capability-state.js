@@ -1,6 +1,11 @@
+function cloneConfiguration(configuration) {
+  return Object.fromEntries(Object.entries(configuration || {}));
+}
+
 export function createCapabilityDraft(view) {
   return {
-    ...structuredClone(view),
+    ...view,
+    configuration: cloneConfiguration(view.configuration),
     replacement_api_key: "",
     revealed_api_key: "",
     clear_api_key: false,
@@ -19,10 +24,22 @@ export function updateCapabilityKeyInput(draft, value) {
   draft.clear_api_key = false;
 }
 
+export function clearCapabilityKeyInput(draft) {
+  draft.revealed_api_key = "";
+  draft.replacement_api_key = "";
+  draft.api_key_masked = "";
+}
+
+export function handleCapabilityKeydown(draft, event) {
+  if (draft.revealed_api_key || event.key !== "Delete") return;
+  event.preventDefault();
+  clearCapabilityKeyInput(draft);
+}
+
 export function createUpdatePayload(draft) {
   const payload = {
     enabled: draft.enabled,
-    configuration: structuredClone(draft.configuration),
+    configuration: cloneConfiguration(draft.configuration),
     clear_api_key: draft.clear_api_key,
   };
   const replacement = draft.replacement_api_key.trim();

@@ -40,6 +40,21 @@ def _invalid_message() -> SomaiError:
     return SomaiError(ErrorCode.INVALID_MESSAGE, "Invalid client event")
 
 
+def _current_request_origin(websocket: WebSocket) -> str | None:
+    host = websocket.headers.get("host")
+    if not host:
+        return None
+    scheme = "https" if websocket.url.scheme == "wss" else "http"
+    try:
+        return normalize_origin(f"{scheme}://{host}")
+    except ValueError:
+        return None
+
+
+def _origin_is_allowed(websocket: WebSocket, normalized_origin: str, settings: Settings) -> bool:
+    return normalized_origin in settings.allowed_origins or normalized_origin == _current_request_origin(websocket)
+
+
 def _uploaded_image_urls(image_ids: list[str], server_port: int) -> tuple[str, ...]:
     return tuple(f"http://127.0.0.1:{server_port}/api/v1/images/{image_id}" for image_id in image_ids)
 
@@ -130,7 +145,7 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
             logger.info("conversation rejected", extra=log_context)
             await websocket.close(code=1008)
             return
-        if normalized_origin not in settings.allowed_origins:
+        if not _origin_is_allowed(websocket, normalized_origin, settings):
             logger.info("conversation rejected", extra=log_context)
             await websocket.close(code=1008)
             return

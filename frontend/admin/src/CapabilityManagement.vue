@@ -1,11 +1,13 @@
 <script setup>
 import { ElMessage } from "element-plus";
 import { computed, onMounted, ref } from "vue";
-import { Hide, Refresh, View } from "@element-plus/icons-vue";
+import { Delete, Hide, Refresh, View } from "@element-plus/icons-vue";
 import {
   capabilityKeyInputValue,
+  clearCapabilityKeyInput,
   createCapabilityDraft,
   createUpdatePayload,
+  handleCapabilityKeydown,
   updateCapabilityKeyInput,
   validateCapabilityDraft,
 } from "./capability-state.js";
@@ -71,12 +73,6 @@ async function revealKey(draft) {
   }
 }
 
-function clearKey(draft) {
-  draft.clear_api_key = true;
-  draft.replacement_api_key = "";
-  draft.revealed_api_key = "";
-}
-
 onMounted(loadCapabilities);
 </script>
 
@@ -118,6 +114,7 @@ onMounted(loadCapabilities);
                   :show-password="!draft.revealed_api_key"
                   :placeholder="draft.clear_api_key ? '保存后将清除' : draft.api_key_masked || '输入 API Key'"
                   @input="updateCapabilityKeyInput(draft, $event)"
+                  @keydown.delete="handleCapabilityKeydown(draft, $event)"
                 />
                 <el-button
                   v-if="draft.can_reveal_api_key && !draft.clear_api_key"
@@ -125,14 +122,14 @@ onMounted(loadCapabilities);
                   :icon="draft.revealed_api_key ? Hide : View"
                   @click="revealKey(draft)"
                 />
+                <el-button
+                  v-if="draft.can_reveal_api_key"
+                  circle
+                  :icon="Delete"
+                  title="清空输入"
+                  @click="clearCapabilityKeyInput(draft)"
+                />
               </div>
-              <el-button
-                v-if="draft.can_reveal_api_key && !draft.clear_api_key"
-                class="clear-secret"
-                link
-                type="danger"
-                @click="clearKey(draft)"
-              >清除 Key</el-button>
             </el-form-item>
             <div class="capability-number-row">
               <el-form-item label="请求超时（秒）">

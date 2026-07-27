@@ -59,6 +59,19 @@ class TavilyClient:
 def create_web_search_tool(client: TavilyClient) -> BaseTool:
     """Create a bounded search tool that hides upstream failure details."""
 
+    def error_message(error: Exception) -> str:
+        if isinstance(error, httpx.HTTPStatusError):
+            status = error.response.status_code
+            if status in {401, 403}:
+                return "联网搜索密钥无效或已过期，请重新保存。"
+            if status == 429:
+                return "联网搜索请求过于频繁，请稍后再试。"
+        if isinstance(error, httpx.TimeoutException):
+            return "联网搜索超时，请稍后再试。"
+        if isinstance(error, httpx.TransportError):
+            return "联网搜索网络不可用，请检查服务连接。"
+        return "搜索服务暂时不可用，请稍后再试。"
+
     @tool
     async def web_search(query: str) -> Mapping[str, Any]:
         """搜索互联网并返回带来源链接的摘要；适合查询实时或近期信息。"""
@@ -69,7 +82,7 @@ def create_web_search_tool(client: TavilyClient) -> BaseTool:
             return {"error": "搜索关键词过长"}
         try:
             return await client.search(normalized_query)
-        except Exception:
-            return {"error": "搜索服务暂时不可用，请稍后再试。"}
+        except Exception as error:
+            return {"error": error_message(error)}
 
     return web_search

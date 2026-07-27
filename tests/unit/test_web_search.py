@@ -60,4 +60,17 @@ async def test_web_search_tool_hides_upstream_failures() -> None:
     ) as http_client:
         tool = create_web_search_tool(TavilyClient(http_client, api_key="tavily-secret"))
 
-        assert await tool.ainvoke({"query": "查询"}) == {"error": "搜索服务暂时不可用，请稍后再试。"}
+        assert await tool.ainvoke({"query": "查询"}) == {"error": "联网搜索网络不可用，请检查服务连接。"}
+
+
+@pytest.mark.asyncio
+async def test_web_search_tool_reports_auth_failures_as_configuration_issues() -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"detail": "invalid api key"})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://api.tavily.com"
+    ) as http_client:
+        tool = create_web_search_tool(TavilyClient(http_client, api_key="bad-key"))
+
+        assert await tool.ainvoke({"query": "查询"}) == {"error": "联网搜索密钥无效或已过期，请重新保存。"}

@@ -22,7 +22,8 @@
 ## 搜索接口
 
 `TavilyClient` 只接收组合根创建的 `httpx.AsyncClient` 和敏感 API Key，调用 Tavily `/search` 的 basic 模式，
-并将结果裁剪为标题、链接和摘要。`create_web_search_tool` 对空/过长查询及上游异常返回安全错误。
+并将结果裁剪为标题、链接和摘要。`create_web_search_tool` 对空/过长查询及上游异常返回安全错误，
+会把鉴权、限流、超时和网络不可达翻译成可操作但不泄露上游细节的提示。
 搜索由能力服务按数据库开关动态注册；环境配置只首次补齐缺失记录。API Host、Key、超时和结果数属于每轮不可变
 快照，共享 HTTP 客户端生命周期由应用 lifespan 管理。
 

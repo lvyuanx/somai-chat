@@ -69,6 +69,18 @@ def test_revealed_capability_key_uses_the_existing_input() -> None:
     assert "revealed-secret" not in capability
 
 
+def test_capability_key_clear_button_clears_the_current_draft_only() -> None:
+    capability = (
+        Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "CapabilityManagement.vue"
+    ).read_text(encoding="utf-8")
+
+    assert 'v-if="draft.can_reveal_api_key"' in capability
+    assert "clearCapabilityKeyInput(draft)" in capability
+    assert ":icon=\"Delete\"" in capability
+    assert "@keydown.delete=\"handleCapabilityKeydown(draft, $event)\"" in capability
+    assert "clear_api_key" in capability
+
+
 def test_admin_vue_components_stay_within_size_limit() -> None:
     directory = Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src"
     for component in directory.glob("*.vue"):
