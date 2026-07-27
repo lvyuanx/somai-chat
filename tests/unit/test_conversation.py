@@ -162,13 +162,15 @@ async def test_runtime_streams_real_graph_chunks_in_order() -> None:
 
     assert [event.type for event in events] == [
         "response.started",
+        "workflow.node.started",
         "response.delta",
         "response.delta",
+        "workflow.node.completed",
         "response.completed",
     ]
     assert {event.data["response_id"] for event in events} == {"resp_fixed"}
     assert events[0].data["message_id"] == "msg-1"
-    assert [event.data["delta"] for event in events[1:3]] == ["你", "好"]
+    assert [event.data["delta"] for event in events if event.type == "response.delta"] == ["你", "好"]
     assert events[-1].data == {"response_id": "resp_fixed", "content": "你好", "usage": None}
 
 

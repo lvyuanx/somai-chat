@@ -10,7 +10,7 @@
 
 ## 主要职责
 
-- 展示会话连接、模型标识、对话消息与有上限的协议事件轨迹。
+- 展示会话连接、模型标识、对话消息与最近一轮有上限的模型/工具工作流。
 - 通过公开 `/api/v1/chat/ws/{conversation_id}` 协议发送消息、停止生成和恢复连接。
 - 使用安全的 DOM Markdown 子集渲染流式回复，不解释模型或用户提供的 HTML。
 - 将合法会话 ID 保存在浏览器本地；新建会话时更换 ID，清空显示时不改变服务端状态。
@@ -29,10 +29,12 @@
 
 - `index.html`：三栏语义结构、表单与可访问性标记。
 - `app.css`：工业设备控制台基础视觉、消息状态、组件样式和动效定义。
+- `workflow.css`：桌面节点轨道、节点状态、结构化载荷和移动底部抽屉视觉。
 - `responsive.css`：850px 移动运行台布局、动态视口高度兼容和减少动效覆盖。
 - `app.js`：会话存储、WebSocket 协议状态机、动态输入限额、composer 和会话操作组合。
 - `view.js`：通过注入的 DOM、window、elements 与 limits
-  管理有界消息/轨迹、live status 和 RAF 渲染。
+  管理有界消息、live status 和 RAF 渲染。
+- `workflow.js`：管理最近一轮节点状态、双端 DOM 渲染、节点载荷展开和移动抽屉焦点。
 - `markdown.js`：只通过 DOM 文本 API 构建允许的安全 Markdown 子集。
 - `package.json`：把同目录 JavaScript 声明为原生 ES module，供浏览器与 Node 检查使用。
 - `__init__.py`：包标识，使静态资源随 Python 包分发。
@@ -55,28 +57,29 @@ streaming 状态下主按钮只发送一次 `response.cancel`，
 任何非 idle 请求会清理并显示未重放提示。
 每个 socket 回调先确认自己仍是当前连接，旧连接的迟到事件不得改变新会话 UI。
 新建会话主动关闭旧连接、清空本地视图并连接新 ID；
-清空显示仅在 idle 时删除消息与轨迹 DOM，活跃请求期间按钮和处理器都禁止该操作。
+清空显示仅在 idle 时删除消息与工作流 DOM，活跃请求期间按钮和处理器都禁止该操作。
 页面卸载时主动关闭连接。
 
 delta 只累加有界文本，并用 `requestAnimationFrame` 合并同帧重绘；
 终态同步取消并刷新待处理帧。每条当前流式回复从浏览器成功发送请求开始显示首字耗时和总耗时：
 首字耗时在首次收到非空文本时冻结，总耗时每 100ms 更新，并在终态保留。
-单条回复最多展示 100,000 code points，timeline 最多 100 条消息，trace 最多 120 条事件且单条 JSON
-最多展示 12,000 code points，达到上限时显示截断标记并丢弃超出内容。
+单条回复最多展示 100,000 code points，timeline 最多 100 条消息，每轮工作流最多展示 120 个真实开始的节点；
+后端工具输入输出单段最多保留 12,000 code points，达到上限时节点显示截断标记。
 
-桌面使用深色三栏运行台：会话、对话与事件轨迹分别独立；
+桌面使用深色三栏运行台：会话、对话与本轮工作流分别独立；
 对话时间线是唯一的对话滚动容器，Grid 祖先使用 `min-height: 0` 以保证其可收缩和滚动。
 追加消息或流式刷新前仅在阅读位置距离底部不超过 48px 时跟随到底部，避免打断历史消息阅读；
 新建会话和清空显示等主动重置操作不受此跟随规则影响。
-850px 及以下保留紧凑 session rail、连接状态与会话操作，隐藏品牌细节、
-会话/模型详情和 trace rail。独立隐藏 live region 只播报 ready、终态和错误，不播报 delta。
+850px 及以下保留紧凑 session rail、连接状态与会话操作，隐藏品牌细节、会话/模型详情和桌面工作流 rail；
+对话区显示当前节点摘要，点击后打开带遮罩的底部抽屉。抽屉支持 Escape、焦点循环和关闭后焦点恢复。
+独立隐藏 live region 只播报 ready、终态和错误，不播报 delta。
 
 ## 安全与扩展方式
 
 Markdown 仅支持段落、一级至三级标题、列表、围栏代码、行内代码和 HTTP(S) 链接。
 所有用户、模型与事件内容通过 `textContent` 或文本节点写入；
 链接协议通过 `URL` 再校验，并带 `noopener noreferrer`。
-新增协议事件时应在 `handleEvent` 中显式处理，未知事件只保留在受限轨迹中。
+新增协议事件时应在 `handleEvent` 中显式处理；未知事件安全忽略，不进入 DOM。
 
 ## 注意事项
 
@@ -85,5 +88,6 @@ Markdown 仅支持段落、一级至三级标题、列表、围栏代码、行�
 - 页面不加载外部字体、脚本、样式或 CDN 资源。
 - HTTP 响应通过应用中间件设置 CSP、`nosniff` 和未指纹页面/资源的 `no-cache`；
   CSP 的 WebSocket 目标只允许经过字符与 URL 结构校验的当前 Host，不允许裸 `ws:`/`wss:` scheme。
-- `index.html`、`app.css`、`responsive.css`、`app.js`、`view.js`、`markdown.js` 必须作为 Python wheel
+- `index.html`、`app.css`、`workflow.css`、`responsive.css`、`app.js`、`view.js`、`workflow.js`、`markdown.js`
+  必须作为 Python wheel
   包数据分发；安装后的应用从任意当前工作目录都应能提供页面和 `/assets/`。

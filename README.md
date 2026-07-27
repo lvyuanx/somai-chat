@@ -4,7 +4,9 @@ SOMAI Chat 是 SOMAI 具身智能系统的文本对话中枢 MVP。端侧负责�
 
 ## MVP 边界与架构
 
-当前包含 FastAPI 服务、LangGraph 多轮会话、进程内 Checkpointer、流式 WebSocket、取消/心跳、健康检查、可选的 Tavily 联网搜索和无构建步骤的浏览器调试台。不包含音频、ASR、TTS、认证、知识库、真实设备动作、持久化或分布式会话。
+当前包含 FastAPI 服务、LangGraph 多轮会话、进程内 Checkpointer、流式 WebSocket、取消/心跳、健康检查、
+可选的 Tavily 联网搜索，以及带实时模型/工具工作流的无构建步骤浏览器调试台。不包含音频、ASR、TTS、认证、
+知识库、真实设备动作、持久化或分布式会话。
 
 ```text
 端侧 / 浏览器调试台
@@ -120,11 +122,16 @@ Uvicorn，不是数据库地址。旧 `SOMAI_DATABASE_URL` 不再支持；升级
 {"type":"ping","data":{"correlation_id":"probe_1"}}
 ```
 
-服务端一轮事件按 `response.started` → 零到多个 `response.delta` → `response.completed` 排列；取消成功以 `response.cancelled` 终止，心跳返回 `pong`。
+服务端一轮事件按 `response.started` → 零到多个 `response.delta` → `response.completed` 排列；取消成功以
+`response.cancelled` 终止，心跳返回 `pong`。模型与工具执行期间会穿插 `workflow.node.started`、
+`workflow.node.completed` 或 `workflow.node.failed`，均通过 `response_id` 与当前回复关联。工具输入输出已脱敏并限制
+为 12,000 个 Unicode code point；模型节点不包含 Prompt、历史消息或原始模型输出。
 
 ```json
 {"type":"response.started","event_id":"evt_...","timestamp":"2026-07-16T10:24:18Z","data":{"response_id":"resp_...","message_id":"msg_1"}}
 {"type":"response.delta","event_id":"evt_...","timestamp":"2026-07-16T10:24:18Z","data":{"response_id":"resp_...","delta":"你好"}}
+{"type":"workflow.node.started","event_id":"evt_...","timestamp":"2026-07-16T10:24:18Z","data":{"response_id":"resp_...","node_id":"node_...","kind":"tool","name":"get_weather","input":{"city":"武汉"},"input_truncated":false}}
+{"type":"workflow.node.completed","event_id":"evt_...","timestamp":"2026-07-16T10:24:18Z","data":{"response_id":"resp_...","node_id":"node_...","duration_ms":86,"output":{"condition":"晴"},"output_truncated":false}}
 {"type":"response.completed","event_id":"evt_...","timestamp":"2026-07-16T10:24:19Z","data":{"response_id":"resp_...","content":"你好。","usage":null}}
 {"type":"pong","event_id":"evt_...","timestamp":"2026-07-16T10:24:19Z","data":{"correlation_id":"probe_1"}}
 ```
@@ -152,6 +159,7 @@ make check
 ```bash
 node tests/js/web_console_state.mjs
 node tests/js/console_view.mjs
+node tests/js/workflow_view.mjs
 ```
 
 ## Docker

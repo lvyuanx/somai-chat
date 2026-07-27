@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#e9e5dc">
     <title>SOMAI · Conversation Console</title>
     <link rel="stylesheet" href="/assets/app.css">
+    <link rel="stylesheet" href="/assets/workflow.css">
     <link rel="stylesheet" href="/assets/embed.css">
     <link rel="stylesheet" href="/assets/responsive.css">
   </head>
@@ -62,6 +63,22 @@
         <div id="message-timeline" class="message-timeline"></div>
         <p id="live-status" class="visually-hidden" aria-live="polite"></p>
 
+        <button
+          id="workflow-summary"
+          class="workflow-summary"
+          type="button"
+          aria-controls="workflow-sheet"
+          aria-expanded="false"
+          hidden
+        >
+          <span class="workflow-summary__lamp" aria-hidden="true"></span>
+          <span class="workflow-summary__copy">
+            <strong id="workflow-summary-name">工作流准备中</strong>
+            <span id="workflow-summary-meta">等待节点</span>
+          </span>
+          <span class="workflow-summary__chevron" aria-hidden="true">⌃</span>
+        </button>
+
         <form id="composer" class="composer">
           <div class="composer-heading">
             <label for="message-input">Message input</label>
@@ -87,14 +104,36 @@
         </form>
       </section>
 
-      <aside class="side-rail trace-rail" aria-labelledby="trace-heading">
+      <aside class="side-rail workflow-rail" aria-labelledby="workflow-heading">
         <div class="section-rule">
-          <h2 id="trace-heading">Event trace</h2>
-          <span>RX/TX</span>
+          <h2 id="workflow-heading">Workflow</h2>
+          <span>Current run</span>
         </div>
-        <ol id="event-trace" class="event-trace" aria-label="WebSocket event trace"></ol>
+        <p id="workflow-empty" class="workflow-empty">发送消息后，本轮模型和工具节点会显示在这里。</p>
+        <ol id="workflow-list" class="workflow-list" aria-label="当前工作流节点"></ol>
       </aside>
     </main>
+
+    <div id="workflow-backdrop" class="workflow-backdrop" hidden></div>
+    <section
+      id="workflow-sheet"
+      class="workflow-sheet"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="workflow-sheet-heading"
+      hidden
+    >
+      <div class="workflow-sheet__handle" aria-hidden="true"></div>
+      <header class="workflow-sheet__header">
+        <div>
+          <p class="eyebrow">Current run</p>
+          <h2 id="workflow-sheet-heading">本轮工作流</h2>
+        </div>
+        <span id="workflow-sheet-status">等待节点</span>
+        <button id="workflow-close" class="workflow-sheet__close" type="button" aria-label="关闭工作流">×</button>
+      </header>
+      <ol id="workflow-mobile-list" class="workflow-list" aria-label="当前工作流节点"></ol>
+    </section>
     <script type="module" src="/assets/app.js"></script>
   </body>
 </html>

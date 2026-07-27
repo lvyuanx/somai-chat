@@ -40,7 +40,10 @@ def test_debug_console_has_accessible_local_structure() -> None:
         'for="message-input"',
         'id="message-input"',
         'id="send-stop"',
-        'id="event-trace"',
+        'id="workflow-list"',
+        'id="workflow-summary"',
+        'id="workflow-sheet"',
+        'id="workflow-backdrop"',
         '<script type="module" src="/assets/app.js"></script>',
         'href="/assets/app.css"',
         'href="/assets/responsive.css"',
@@ -57,13 +60,17 @@ def test_debug_console_has_accessible_local_structure() -> None:
 def test_debug_console_assets_are_served_with_expected_content_types() -> None:
     with TestClient(create_app()) as client:
         stylesheet = client.get("/assets/app.css")
+        workflow_stylesheet = client.get("/assets/workflow.css")
         responsive = client.get("/assets/responsive.css")
         script = client.get("/assets/app.js")
         markdown = client.get("/assets/markdown.js")
         view = client.get("/assets/view.js")
+        workflow = client.get("/assets/workflow.js")
 
     assert stylesheet.status_code == 200
     assert stylesheet.headers["content-type"].startswith("text/css")
+    assert workflow_stylesheet.status_code == 200
+    assert workflow_stylesheet.headers["content-type"].startswith("text/css")
     assert responsive.status_code == 200
     assert responsive.headers["content-type"].startswith("text/css")
     assert script.status_code == 200
@@ -72,6 +79,8 @@ def test_debug_console_assets_are_served_with_expected_content_types() -> None:
     assert "javascript" in markdown.headers["content-type"]
     assert view.status_code == 200
     assert "javascript" in view.headers["content-type"]
+    assert workflow.status_code == 200
+    assert "javascript" in workflow.headers["content-type"]
 
 
 def test_console_responses_have_security_and_no_cache_headers() -> None:
@@ -83,10 +92,12 @@ def test_console_responses_have_security_and_no_cache_headers() -> None:
         paths = (
             "/assets/index.html",
             "/assets/app.css",
+            "/assets/workflow.css",
             "/assets/responsive.css",
             "/assets/app.js",
             "/assets/markdown.js",
             "/assets/view.js",
+            "/assets/workflow.js",
         )
         responses = [client.get(path) for path in paths]
 
@@ -109,6 +120,7 @@ def test_console_responses_have_security_and_no_cache_headers() -> None:
 def test_console_styles_cover_responsive_accessible_streaming_states() -> None:
     with TestClient(create_app()) as client:
         css = client.get("/assets/app.css").text
+        workflow_css = client.get("/assets/workflow.css").text
         responsive = client.get("/assets/responsive.css").text
 
     assert "@media" not in css
@@ -127,12 +139,16 @@ def test_console_styles_cover_responsive_accessible_streaming_states() -> None:
     assert ".message-timeline" in css and "overflow-y: auto" in css
     assert "min-height: 0" in css
     assert ".visually-hidden" in css
+    assert '.workflow-node[data-status="running"]' in workflow_css
+    assert ".workflow-node__payload" in workflow_css
     mobile = responsive[responsive.index("@media (max-width: 850px)") :]
     assert "grid-template-rows: auto minmax(0, 1fr)" in mobile
     assert re.search(r"height:\s*100vh;\s*height:\s*100dvh", mobile)
     assert "min-height: 0" in mobile
     assert ".session-rail" in mobile
-    assert ".trace-rail" in mobile and "display: none" in mobile
+    assert ".workflow-rail" in mobile and "display: none" in mobile
+    assert ".workflow-summary" in mobile
+    assert ".workflow-sheet" in mobile
     assert not re.search(r"\.side-rail\s*\{\s*display:\s*none", mobile)
 
 
@@ -141,6 +157,7 @@ def test_console_script_uses_safe_dom_and_websocket_state_machine() -> None:
         javascript = client.get("/assets/app.js").text
         markdown = client.get("/assets/markdown.js").text
         view = client.get("/assets/view.js").text
+        workflow = client.get("/assets/workflow.js").text
 
     forbidden = ("innerHTML", "insertAdjacentHTML", "eval(", "new Function")
     required = (
@@ -157,13 +174,20 @@ def test_console_script_uses_safe_dom_and_websocket_state_machine() -> None:
         "createElement",
         "reconnect",
     )
-    assert not any(token in javascript or token in markdown or token in view for token in forbidden)
+    sources = (javascript, markdown, view, workflow)
+    assert not any(token in source for token in forbidden for source in sources)
     assert all(token in javascript for token in required)
     assert 'import {markdownNodes} from "./markdown.js";' in view
     assert "export function markdownNodes" in markdown
     assert re.search(r'import \{[^}]*createConsoleView[^}]*\} from "\./view\.js";', javascript)
     assert "createConsoleView({" in javascript
     assert "export function createConsoleView" in view
+    assert 'import {createWorkflowView} from "./workflow.js";' in javascript
+    assert 'event.type.startsWith("workflow.node.")' in javascript
+    assert "workflow.node.started" in workflow
+    assert "workflow.node.completed" in workflow
+    assert "workflow.node.failed" in workflow
+    assert "event-trace" not in javascript
 
 
 def test_console_message_send_enters_pending_synchronously() -> None:
@@ -229,7 +253,7 @@ def test_console_socket_close_clears_request_state_on_every_phase() -> None:
 
     close_reset = re.compile(
         r'if \(state\.phase !== "idle"\) \{\s*'
-        r'finishGeneration\("Connection closed; the last message was not replayed\.".*?'
+        r'.*?finishGeneration\("Connection closed; the last message was not replayed\.".*?'
         r"\} else \{\s*resetRequestState\(\);\s*\}",
         re.DOTALL,
     )

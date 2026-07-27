@@ -94,14 +94,14 @@ const window = {
     frames.delete(identifier);
   },
 };
-const elements = {timeline: new Node("div"), trace: new Node("ol"), liveStatus: new Node("p")};
+const elements = {timeline: new Node("div"), liveStatus: new Node("p")};
 const modulePath = resolve("src/somai_chat/web/view.js");
 const {createConsoleView} = await import(`${pathToFileURL(modulePath).href}?view-test=1`);
 const view = createConsoleView({
   document,
   window,
   elements,
-  limits: {responseCodePoints: 5, timelineMessages: 3, traceEvents: 2, traceCodePoints: 20},
+  limits: {responseCodePoints: 5, timelineMessages: 3},
 });
 
 elements.timeline.clientHeight = 100;
@@ -147,16 +147,9 @@ assert(frames.size === 0, "truncated response scheduled a redundant render frame
 view.finishAssistant();
 assert(frames.size === 0, "terminal rendering did not cancel the pending frame");
 
-view.appendTrace("RX", {content: "x".repeat(100)});
-view.appendTrace("RX", {content: "y".repeat(100)});
-view.appendTrace("RX", {content: "z".repeat(100)});
-assert(elements.trace.childElementCount === 2, "trace event limit was not enforced");
-assert(elements.trace.children.at(-1).textContent.includes("truncated"), "trace truncation was not marked");
-
 view.announce("Response completed.");
 assert(elements.liveStatus.textContent === "Response completed.", "live status was not updated");
 view.clearDisplay();
 assert(elements.timeline.childElementCount === 0, "view clear did not remove timeline messages");
-assert(elements.trace.childElementCount === 0, "view clear did not remove trace events");
 
 console.log("console view boundary harness passed");

@@ -8,7 +8,7 @@
 ## 主要职责
 
 - 把用户文本和 `conversation_id` 交给 Conversation Graph。
-- 将模型消息流转换为稳定的服务端 started、delta、completed 事件。
+- 将 Graph 事件流转换为稳定的回复事件和模型/工具工作流节点事件。
 - 确保每个连接同一时间只有一个生成任务，并支持精确取消和安全关闭。
 - 将生成异常映射为单个安全 error 事件，避免暴露供应商内部信息。
 
@@ -16,6 +16,7 @@
 
 - `conversation.py`：包含 `ConversationRuntime` 与 `ConversationSession`。
 - `text_normalizer.py`：将模型文本规范化为可直接由端侧 TTS 播放的纯文本。
+- `workflow.py`：关联 LangGraph run ID，脱敏并限制工具载荷，生成稳定工作流节点事件。
 - `__init__.py`：包标识，不创建运行时全局单例。
 
 `ConversationRuntime` 负责一轮生成和事件翻译；
@@ -25,7 +26,10 @@
 ## 核心接口与主要流程
 
 `ConversationRuntime.stream(...)` 把会话标识映射为
-LangGraph `thread_id`，过滤空的 AI 文本块，拼接最终文本并累加各流式块提供的 usage。
+LangGraph `thread_id`，消费 `astream_events`，过滤空的 AI 文本块，拼接最终文本并累加各流式块提供的 usage。
+每次 `on_chat_model_start/end/error` 映射为一个 `model` 节点，每次 `on_tool_start/end/error` 映射为一个独立工具节点；
+并行工具通过各自 run ID 关联。工具输入在 started 中发送，输出在 completed 中发送，原始异常永不进入 failed 事件。
+为兼容已注入的旧 Graph 门面，不支持 `astream_events` 时保留原消息流翻译，但不会产生工作流节点。
 Runtime 只调用构造时注入的 provider-neutral `ModelUnavailableClassifier`；分类为 true 时映射为
 `MODEL_UNAVAILABLE` 和固定安全消息，默认 classifier 永远为 false。取消原样传播，普通编程、Graph、未知异常以及
 classifier 自身失败均安全回退为 `GENERATION_FAILED`。本模块不得导入 Provider、OpenAI 或 httpx。
@@ -65,7 +69,8 @@ Graph 消息块转换为协议事件后经回调返回客户端。
 
 摄像头工具结果由 Runtime 映射为 `action.request`；Runtime 必须先完整消费并关闭 Graph 流，再发送动作事件，确保
 Checkpoint 在端侧可能重启前已经稳定保存。端侧上传图片后应以带 `image_ids` 的新消息继续对话。
-未来工具进度或其他动作事件应在 Runtime 增加显式映射，不把传输对象带入 Graph。
+工具输入输出只接受 JSON 安全展示：敏感字段递归替换为 `[REDACTED]`，嵌套、集合和总 code point 均有上限；
+无法直接表示的值转换为安全文本预览。未来工具进度或其他动作事件应在 Runtime 增加显式映射，不把传输对象带入 Graph。
 每个连接必须创建独立 Session；MVP 只提供进程内并发控制。
 取消、完成和错误只能有一个终态；发送失败后不得尝试再次向同一连接发送。
 任何对外错误不得包含用户完整消息、供应商响应、内部异常文本或堆栈。

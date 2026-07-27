@@ -36,6 +36,10 @@ WebSocket 在线状态和 Key 脱敏值。机器人 WebSocket 需要 Bearer Key�
 - `Ping`：可携带关联标识的存活探测事件。
 - `ServerEvent`：包含 `type`、`event_id`、`timestamp` 和 `data` 的服务端通用信封。
 
+工作流使用 `workflow.node.started/completed/failed` 三类服务端事件。started 携带
+`response_id/node_id/kind/name`，工具节点额外携带脱敏输入；completed 携带同一 node ID、非负毫秒耗时和可选工具输出；
+failed 只携带关联标识和耗时，不携带异常原文。旧客户端可以按未知服务端事件忽略它们。
+
 图片上传接口 `POST /api/v1/images` 接收 multipart 图片，返回 `image_id`、同源 `image_url`、媒体类型和字节数；
 读取接口使用 `GET /api/v1/images/{image_id}`。对话消息可使用 `image_ids` 引用已上传图片，WebSocket 层将其解析为
 服务端视觉分析器可读取的本机回环地址；`image_ids` 与旧的 `image_urls` 不能同时出现。服务端生成的图片 ID 不使用端侧

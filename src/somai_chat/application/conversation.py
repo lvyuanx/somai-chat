@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Protocol, cast
 from uuid import uuid4
 
-from langchain_core.messages import AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langchain_core.messages.ai import UsageMetadata, add_usage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
@@ -16,6 +16,7 @@ from pydantic import JsonValue
 from somai_chat.agent.graph import ConversationGraph
 from somai_chat.api.protocol import ServerEvent
 from somai_chat.application.text_normalizer import TextNormalizer
+from somai_chat.application.workflow import WorkflowEventTranslator
 from somai_chat.core.errors import ErrorCode, SomaiError
 from somai_chat.device.tool import parse_camera_capture_result
 from somai_chat.vision.analyzer import ImageAnalyzer
@@ -69,8 +70,8 @@ async def _wait_for_task[T](task: asyncio.Task[T]) -> None:
             raise
 
 
-def _chunk_text(chunk: AIMessageChunk) -> str:
-    content = chunk.content
+def _message_text(message: AIMessage | AIMessageChunk) -> str:
+    content = message.content
     if isinstance(content, str):
         return content
 
@@ -133,31 +134,88 @@ class ConversationRuntime:
                     raise SomaiError(ErrorCode.MODEL_UNAVAILABLE, "Model provider is unavailable")
                 observation = await self._image_analyzer.analyze(content, image_urls)
                 enriched_content = f"{content}\n\n{observation}"
-            graph_stream = cast(
-                _CloseableAsyncIterator[tuple[object, dict[str, object]]],
-                self._graph.astream(
-                    {"messages": [HumanMessage(content=enriched_content)]},
-                    config=config,
-                    stream_mode="messages",
-                ),
-            )
-            async with _managed_stream(graph_stream):
-                async for message, _metadata in graph_stream:
-                    if isinstance(message, ToolMessage) and camera_action is None:
-                        action = parse_camera_capture_result(message.content)
-                        if action is not None:
-                            camera_action = action
-                    if not isinstance(message, AIMessageChunk):
-                        continue
-                    delta = self._text_normalizer.normalize_delta(_chunk_text(message))
-                    if delta:
-                        complete_content.append(delta)
-                        yield ServerEvent.create(
-                            "response.delta",
-                            {"response_id": response_id, "delta": delta},
-                        )
-                    if message.usage_metadata is not None:
-                        usage = add_usage(usage, message.usage_metadata)
+            stream_events = getattr(self._graph, "astream_events", None)
+            if callable(stream_events):
+                workflow = WorkflowEventTranslator(response_id)
+                streamed_model_runs: set[str] = set()
+                graph_events = cast(
+                    _CloseableAsyncIterator[dict[str, object]],
+                    stream_events(
+                        {"messages": [HumanMessage(content=enriched_content)]},
+                        config=config,
+                    ),
+                )
+                async with _managed_stream(graph_events):
+                    async for graph_event in graph_events:
+                        event_type = graph_event.get("event")
+                        event_data = graph_event.get("data")
+                        data = event_data if isinstance(event_data, Mapping) else {}
+                        if isinstance(event_type, str) and event_type.endswith(("_start", "_error")):
+                            workflow_event = workflow.translate(graph_event)
+                            if workflow_event is not None:
+                                yield workflow_event
+
+                        message: AIMessage | AIMessageChunk | None = None
+                        if event_type == "on_chat_model_stream":
+                            streamed_model_runs.add(str(graph_event.get("run_id")))
+                            chunk = data.get("chunk")
+                            if isinstance(chunk, AIMessageChunk):
+                                message = chunk
+                        elif (
+                            event_type == "on_chat_model_end"
+                            and str(graph_event.get("run_id")) not in streamed_model_runs
+                        ):
+                            output = data.get("output")
+                            if isinstance(output, AIMessage):
+                                message = output
+                        elif event_type == "on_tool_end" and camera_action is None:
+                            output = data.get("output")
+                            tool_content = output.content if isinstance(output, ToolMessage) else output
+                            action = parse_camera_capture_result(tool_content)
+                            if action is not None:
+                                camera_action = action
+
+                        if message is not None:
+                            delta = self._text_normalizer.normalize_delta(_message_text(message))
+                            if delta:
+                                complete_content.append(delta)
+                                yield ServerEvent.create(
+                                    "response.delta",
+                                    {"response_id": response_id, "delta": delta},
+                                )
+                            if message.usage_metadata is not None:
+                                usage = add_usage(usage, message.usage_metadata)
+
+                        if isinstance(event_type, str) and event_type.endswith("_end"):
+                            workflow_event = workflow.translate(graph_event)
+                            if workflow_event is not None:
+                                yield workflow_event
+            else:
+                graph_stream = cast(
+                    _CloseableAsyncIterator[tuple[object, dict[str, object]]],
+                    self._graph.astream(
+                        {"messages": [HumanMessage(content=enriched_content)]},
+                        config=config,
+                        stream_mode="messages",
+                    ),
+                )
+                async with _managed_stream(graph_stream):
+                    async for legacy_message, _metadata in graph_stream:
+                        if isinstance(legacy_message, ToolMessage) and camera_action is None:
+                            action = parse_camera_capture_result(legacy_message.content)
+                            if action is not None:
+                                camera_action = action
+                        if not isinstance(legacy_message, AIMessageChunk):
+                            continue
+                        delta = self._text_normalizer.normalize_delta(_message_text(legacy_message))
+                        if delta:
+                            complete_content.append(delta)
+                            yield ServerEvent.create(
+                                "response.delta",
+                                {"response_id": response_id, "delta": delta},
+                            )
+                        if legacy_message.usage_metadata is not None:
+                            usage = add_usage(usage, legacy_message.usage_metadata)
         except asyncio.CancelledError:
             raise
         except Exception as error:

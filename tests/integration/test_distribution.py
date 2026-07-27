@@ -82,7 +82,16 @@ def test_built_wheel_contains_browser_console_assets(tmp_path: Path) -> None:
     wheel = next(tmp_path.glob("somai_chat-*.whl"))
     expected = {
         f"somai_chat/web/{asset}"
-        for asset in ("index.html", "app.css", "responsive.css", "app.js", "view.js", "markdown.js")
+        for asset in (
+            "index.html",
+            "app.css",
+            "workflow.css",
+            "responsive.css",
+            "app.js",
+            "view.js",
+            "workflow.js",
+            "markdown.js",
+        )
     }
 
     with zipfile.ZipFile(wheel) as archive:

@@ -21,6 +21,7 @@ from somai_chat.device.tool import parse_camera_capture_result
 
 CompiledConversationGraph = CompiledStateGraph[ConversationState, None, ConversationState, ConversationState]
 MessageStreamItem = tuple[AnyMessage, dict[str, Any]]
+GraphStreamEvent = dict[str, Any]
 
 
 class ConversationGraph:
@@ -68,6 +69,21 @@ class ConversationGraph:
         async with self._thread_lock(thread_id):
             async for item in self._graph.astream(input, config=config, stream_mode=stream_mode):
                 yield cast(MessageStreamItem, item)
+
+    async def astream_events(
+        self,
+        input: ConversationState,
+        config: RunnableConfig | None = None,
+    ) -> AsyncIterator[GraphStreamEvent]:
+        """Stream model and tool lifecycle events while holding the thread lock."""
+        thread_id = self._thread_id(config)
+        async with self._thread_lock(thread_id):
+            stream = cast(
+                AsyncIterator[GraphStreamEvent],
+                self._graph.astream_events(input, config=config, version="v2"),
+            )
+            async for item in stream:
+                yield item
 
     async def aget_state(self, config: RunnableConfig) -> StateSnapshot:
         """Read a valid thread state without racing an active turn."""

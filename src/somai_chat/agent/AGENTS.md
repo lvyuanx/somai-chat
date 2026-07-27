@@ -19,7 +19,7 @@
 
 `build_conversation_graph(model, checkpointer=None, tools=())` 在无工具时创建 `START -> model -> END` 对话图；
 传入工具时创建 `START -> model -> tools -> model` 条件循环，
-并返回只公开 `ainvoke`、`astream` 和 `aget_state` 的 `ConversationGraph`。
+并返回公开 `ainvoke`、`astream`、`astream_events` 和 `aget_state` 的 `ConversationGraph`。
 调用方必须在 Graph 配置中传入非空 `thread_id`；
 系统将 `conversation_id` 原样映射为该值。
 
@@ -28,6 +28,8 @@
 应用层把新用户消息写入 Graph。
 Facade 在委托 LangGraph 前校验 `thread_id`，无效配置不会产生 Checkpoint。
 它按 `thread_id` 锁定完整调用，同一会话的多轮调用串行执行，不同会话可并行。
+`astream_events` 使用相同的 thread 校验和锁语义，向 Application 暴露 LangGraph v2 的模型/工具生命周期事件；
+Application 只消费该中立事件流，不向 Graph 注入 WebSocket 类型。
 模型节点临时在完整会话历史前加入一条 SOMAI 系统消息，异步调用模型，
 并把返回的 AI 消息写回状态。若模型请求已注册工具，图进入 `ToolNode` 执行工具，并将工具结果作为消息回送模型；
 否则结束本轮。

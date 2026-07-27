@@ -17,6 +17,7 @@ class FakeNode {
     this.dataset = {};
     this.className = "";
     this.disabled = false;
+    this.hidden = false;
     this.value = "";
     this.scrollTop = 0;
     this._text = "";
@@ -62,6 +63,12 @@ class FakeNode {
     }
   }
 
+  replaceChildren(...nodes) {
+    this.children = [];
+    this._text = "";
+    this.append(...nodes);
+  }
+
   removeChild(node) {
     const index = this.children.indexOf(node);
     if (index >= 0) {
@@ -72,6 +79,10 @@ class FakeNode {
 
   setAttribute(name, value) {
     this.attributes.set(name, String(value));
+  }
+
+  getAttribute(name) {
+    return this.attributes.get(name) || null;
   }
 
   removeAttribute(name) {
@@ -91,19 +102,30 @@ class FakeNode {
     }
   }
 
-  focus() {}
+  click() {
+    this.emit("click");
+  }
+
+  focus() {
+    this.ownerDocument.activeElement = this;
+  }
+
+  querySelectorAll() {
+    return [];
+  }
 }
 
 class FakeDocument {
   constructor() {
     this.fragmentCount = 0;
+    this.activeElement = null;
+    this.listeners = new Map();
     this.elements = new Map();
     for (const id of [
       "composer",
       "message-input",
       "send-stop",
       "message-timeline",
-      "event-trace",
       "connection-status",
       "conversation-id",
       "model-name",
@@ -112,9 +134,22 @@ class FakeDocument {
       "clear-display",
       "composer-hint",
       "live-status",
+      "workflow-list",
+      "workflow-empty",
+      "workflow-summary",
+      "workflow-summary-name",
+      "workflow-summary-meta",
+      "workflow-sheet",
+      "workflow-backdrop",
+      "workflow-close",
+      "workflow-sheet-status",
+      "workflow-mobile-list",
     ]) {
       this.elements.set(id, new FakeNode("div", this));
     }
+    this.elements.get("workflow-summary").hidden = true;
+    this.elements.get("workflow-sheet").hidden = true;
+    this.elements.get("workflow-backdrop").hidden = true;
   }
 
   getElementById(id) {
@@ -134,6 +169,12 @@ class FakeDocument {
   createDocumentFragment() {
     this.fragmentCount += 1;
     return new FakeNode("#fragment", this);
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) || [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
   }
 }
 
@@ -239,7 +280,8 @@ const button = document.getElementById("send-stop");
 const clear = document.getElementById("clear-display");
 const newSession = document.getElementById("new-session");
 const timeline = document.getElementById("message-timeline");
-const trace = document.getElementById("event-trace");
+const workflowList = document.getElementById("workflow-list");
+const workflowSummary = document.getElementById("workflow-summary");
 const model = document.getElementById("model-name");
 const status = document.getElementById("connection-status");
 const count = document.getElementById("character-count");
@@ -297,7 +339,25 @@ socket.emit("message", {
 });
 assert(button.textContent === "Stop" && !button.disabled, "matching started did not begin streaming");
 assert(clear.disabled, "clear must stay disabled while streaming");
-assert(intervals.size === 1, "active response timing did not start a refresh interval");
+assert(intervals.size === 2, "response and workflow timing did not start refresh intervals");
+socket.emit("message", {
+  type: "workflow.node.started",
+  data: {response_id: "resp_active", node_id: "node-model", kind: "model", name: "model"},
+});
+socket.emit("message", {
+  type: "workflow.node.completed",
+  data: {response_id: "resp_active", node_id: "node-model", duration_ms: 25},
+});
+socket.emit("message", {
+  type: "workflow.node.started",
+  data: {
+    response_id: "resp_active", node_id: "node-weather", kind: "tool", name: "get_weather",
+    input: {city: "武汉"}, input_truncated: false,
+  },
+});
+assert(workflowList.childElementCount === 2, "workflow events were not rendered");
+assert(workflowList.textContent.includes("天气工具"), "known workflow tool was not localized");
+assert(workflowSummary.hidden === false, "mobile workflow summary was not exposed");
 const timedAssistant = timeline.children.find((node) => node.className.includes("message--assistant"));
 assert(timedAssistant.textContent.includes("First token: --"), "response timing was not shown on the active reply");
 now = 1234;
@@ -334,7 +394,6 @@ assert(document.fragmentCount === fragmentsBeforeDeltas + 1, "one frame did not 
 const assistant = timeline.children.find((node) => node.className.includes("message--assistant"));
 assert(assistant.textContent.includes("truncated"), "oversized response was not marked as truncated");
 assert(Array.from(assistant.textContent).length <= 100100, "oversized response was retained in the DOM");
-assert(trace.childElementCount <= 120, "trace event count is unbounded");
 for (let index = 0; index < 105; index += 1) {
   socket.emit("message", {type: "error", data: {message: `active-unrelated-${index}`}});
 }
@@ -373,6 +432,7 @@ assert(liveStatus.textContent.includes("completed"), "completed status was not a
 
 clear.emit("click");
 assert(timeline.childElementCount === 1, "idle clear did not reset the local timeline");
+assert(workflowList.childElementCount === 0, "idle clear did not reset the workflow");
 socket.emit("message", {
   type: "conversation.ready",
   data: {model: "fresh", max_message_length: 1, max_websocket_message_bytes: 1000},
@@ -400,8 +460,6 @@ for (let index = 0; index < 110; index += 1) {
 }
 assert(timeline.childElementCount <= 100, "timeline message count is unbounded");
 socket.emit("message", {type: "unknown", data: {content: "z".repeat(20000)}});
-const tracePayload = trace.children.at(-1).children[1].textContent;
-assert(tracePayload.includes("truncated"), "large trace event was not marked as truncated");
-assert(Array.from(tracePayload).length <= 12100, "large trace event was retained without a display bound");
+assert(workflowList.childElementCount === 0, "unknown event changed the workflow");
 
 console.log("web console state harness passed");

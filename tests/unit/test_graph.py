@@ -245,6 +245,9 @@ async def test_invalid_thread_id_does_not_create_a_checkpoint() -> None:
         async for _ in graph.astream(user_input("不应保存"), config=invalid_config):
             pass
     with pytest.raises(ValueError, match="thread_id"):
+        async for _ in graph.astream_events(user_input("不应保存"), config=invalid_config):
+            pass
+    with pytest.raises(ValueError, match="thread_id"):
         await graph.aget_state(invalid_config)
 
     assert [checkpoint async for checkpoint in checkpointer.alist(None)] == []

@@ -29,7 +29,6 @@ function formatDuration(milliseconds) {
 
 export function createConsoleView({document, window, elements, limits}) {
   const responseNotice = "\n\n[Response truncated at the local display limit.]";
-  const traceNotice = "\n… [trace truncated]";
   let activeAssistant = null;
   let renderFrameId = null;
 
@@ -90,24 +89,6 @@ export function createConsoleView({document, window, elements, limits}) {
     timing.className = "message__timing";
     timing.setAttribute("aria-label", "Response timing");
     return timing;
-  }
-
-  function appendTrace(direction, event) {
-    const item = document.createElement("li");
-    const directionNode = document.createElement("span");
-    const payload = document.createElement("pre");
-    item.className = "trace-event";
-    directionNode.className = "trace-event__direction";
-    directionNode.textContent = direction;
-    payload.className = "trace-event__payload";
-    const bounded = boundedText(JSON.stringify(event, null, 2), limits.traceCodePoints);
-    payload.textContent = bounded.text + (bounded.truncated ? traceNotice : "");
-    item.append(directionNode, payload);
-    elements.trace.append(item);
-    while (elements.trace.childElementCount > limits.traceEvents) {
-      elements.trace.removeChild(elements.trace.firstElementChild);
-    }
-    elements.trace.scrollTop = elements.trace.scrollHeight;
   }
 
   function displayContent() {
@@ -210,16 +191,12 @@ export function createConsoleView({document, window, elements, limits}) {
     while (elements.timeline.firstChild) {
       elements.timeline.removeChild(elements.timeline.firstChild);
     }
-    while (elements.trace.firstChild) {
-      elements.trace.removeChild(elements.trace.firstChild);
-    }
   }
 
   return {
     announce,
     appendAssistantDelta,
     appendMessage,
-    appendTrace,
     clearDisplay,
     discardAssistant,
     finishAssistant,

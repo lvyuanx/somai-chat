@@ -1,4 +1,5 @@
 import {codePointLength, createConsoleView} from "./view.js";
+import {createWorkflowView} from "./workflow.js";
 (() => {
   "use strict";
 
@@ -21,7 +22,6 @@ import {codePointLength, createConsoleView} from "./view.js";
     imagePreview: document.getElementById("image-preview"),
     sendStop: document.getElementById("send-stop"),
     timeline: document.getElementById("message-timeline"),
-    trace: document.getElementById("event-trace"),
     status: document.getElementById("connection-status"),
     conversationId: document.getElementById("conversation-id"),
     model: document.getElementById("model-name"),
@@ -30,12 +30,39 @@ import {codePointLength, createConsoleView} from "./view.js";
     liveStatus: document.getElementById("live-status"),
     newSession: document.getElementById("new-session"),
     clearDisplay: document.getElementById("clear-display"),
+    workflowList: document.getElementById("workflow-list"),
+    workflowEmpty: document.getElementById("workflow-empty"),
+    workflowSummary: document.getElementById("workflow-summary"),
+    workflowSummaryName: document.getElementById("workflow-summary-name"),
+    workflowSummaryMeta: document.getElementById("workflow-summary-meta"),
+    workflowSheet: document.getElementById("workflow-sheet"),
+    workflowBackdrop: document.getElementById("workflow-backdrop"),
+    workflowClose: document.getElementById("workflow-close"),
+    workflowSheetStatus: document.getElementById("workflow-sheet-status"),
+    workflowMobileList: document.getElementById("workflow-mobile-list"),
   };
   const view = createConsoleView({
     document,
     window,
-    elements: {timeline: elements.timeline, trace: elements.trace, liveStatus: elements.liveStatus},
-    limits: {responseCodePoints: 100000, timelineMessages: 100, traceEvents: 120, traceCodePoints: 12000},
+    elements: {timeline: elements.timeline, liveStatus: elements.liveStatus},
+    limits: {responseCodePoints: 100000, timelineMessages: 100},
+  });
+  const workflow = createWorkflowView({
+    document,
+    window,
+    elements: {
+      desktopList: elements.workflowList,
+      desktopEmpty: elements.workflowEmpty,
+      mobileList: elements.workflowMobileList,
+      summary: elements.workflowSummary,
+      summaryName: elements.workflowSummaryName,
+      summaryMeta: elements.workflowSummaryMeta,
+      sheet: elements.workflowSheet,
+      backdrop: elements.workflowBackdrop,
+      close: elements.workflowClose,
+      sheetStatus: elements.workflowSheetStatus,
+    },
+    limits: {nodes: 120},
   });
   const state = {
     conversationId: restoreConversationId(),
@@ -207,6 +234,7 @@ import {codePointLength, createConsoleView} from "./view.js";
       state.pendingMessageId = null;
       state.activeResponseId = data.response_id;
       state.phase = "streaming";
+      workflow.start(data.response_id, state.requestStartedAt);
       view.startAssistant({requestStartedAt: state.requestStartedAt});
       startTimingUpdates();
       updateControls();
@@ -217,6 +245,8 @@ import {codePointLength, createConsoleView} from "./view.js";
         }
         view.appendAssistantDelta(data.delta);
       }
+    } else if (event.type.startsWith("workflow.node.") && matchesActiveResponse(data)) {
+      workflow.handle(event);
     } else if (event.type === "response.completed" && matchesActiveResponse(data)) {
       if (typeof data.content === "string") {
         if (data.content) {
@@ -224,9 +254,11 @@ import {codePointLength, createConsoleView} from "./view.js";
         }
         view.replaceAssistantContent(data.content);
       }
+      workflow.finish(data.response_id, "completed");
       finishGeneration("");
       view.announce("Response completed.");
     } else if (event.type === "response.cancelled" && matchesActiveResponse(data)) {
+      workflow.finish(data.response_id, "cancelled");
       finishGeneration("Generation stopped.");
       view.announce("Response stopped.");
     } else if (event.type === "error") {
@@ -234,6 +266,9 @@ import {codePointLength, createConsoleView} from "./view.js";
       const matchesPendingError = state.phase === "pending" && data.message_id === state.pendingMessageId;
       const matchesActiveError = state.phase !== "idle" && matchesActiveResponse(data);
       if (matchesPendingError || matchesActiveError) {
+        if (matchesActiveError) {
+          workflow.finish(data.response_id, "error");
+        }
         finishGeneration(message, true);
       } else {
         view.appendMessage("system", message, {error: true});
@@ -264,7 +299,6 @@ import {codePointLength, createConsoleView} from "./view.js";
         showLocalError("Received an unreadable server event.");
         return;
       }
-      view.appendTrace("RX", event);
       handleEvent(event);
     });
     socket.addEventListener("close", () => {
@@ -273,6 +307,9 @@ import {codePointLength, createConsoleView} from "./view.js";
       }
       state.socket = null;
       if (state.phase !== "idle") {
+        if (state.activeResponseId) {
+          workflow.finish(state.activeResponseId, "interrupted");
+        }
         finishGeneration("Connection closed; the last message was not replayed.", true);
         view.announce("Error: Connection closed; the last message was not replayed.");
       } else {
@@ -305,7 +342,6 @@ import {codePointLength, createConsoleView} from "./view.js";
       showLocalError("Connection is not ready.");
       return false;
     }
-    view.appendTrace("TX", event);
     state.socket.send(serialized);
     return true;
   }
@@ -429,6 +465,7 @@ import {codePointLength, createConsoleView} from "./view.js";
     resetRequestState();
     elements.conversationId.textContent = state.conversationId;
     view.clearDisplay();
+    workflow.clear();
     persistConversationId();
     view.appendMessage("system", "New local session created.");
     connect();
@@ -438,6 +475,7 @@ import {codePointLength, createConsoleView} from "./view.js";
       return;
     }
     view.clearDisplay();
+    workflow.clear();
     view.appendMessage("system", "Local display cleared; server conversation state is unchanged.");
   });
   window.addEventListener("beforeunload", () => {
