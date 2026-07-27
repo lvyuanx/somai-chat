@@ -4,7 +4,7 @@ SOMAI Chat 是 SOMAI 具身智能系统的文本对话中枢 MVP。端侧负责�
 
 ## MVP 边界与架构
 
-当前包含 FastAPI 服务、LangGraph 多轮会话、进程内 Checkpointer、流式 WebSocket、取消/心跳、健康检查和无构建步骤的浏览器调试台。不包含音频、ASR、TTS、认证、知识库、联网搜索、真实设备动作、持久化或分布式会话。
+当前包含 FastAPI 服务、LangGraph 多轮会话、进程内 Checkpointer、流式 WebSocket、取消/心跳、健康检查、可选的 Tavily 联网搜索和无构建步骤的浏览器调试台。不包含音频、ASR、TTS、认证、知识库、真实设备动作、持久化或分布式会话。
 
 ```text
 端侧 / 浏览器调试台
@@ -18,7 +18,7 @@ agent（SOMAI Prompt、LangGraph、内存 Checkpoint）
 providers（OpenAI 兼容 Chat Model 与供应商异常分类）
 ```
 
-`core` 提供配置、错误与安全日志；`main.py` 装配应用；`web` 保存随 wheel 分发的静态调试台。SOMAI 的稳定身份是自然、沉稳、友好的 AI 助手：默认跟随用户语言，输出适合 TTS 的短句；没有接入感知或动作工具时，不声称已经观察或执行。
+`core` 提供配置、错误与安全日志；`main.py` 装配应用；`web` 保存静态调试台和 Tavily 搜索适配器。SOMAI 的稳定身份是自然、沉稳、友好的 AI 助手：默认跟随用户语言，输出适合 TTS 的短句；没有接入感知或动作工具时，不声称已经观察或执行。
 
 ## 本地运行
 
@@ -79,6 +79,10 @@ SOMAI_DATABASE_URL='mysql+asyncmy://root:<password>@127.0.0.1:3306/somai_chat' \
 | `SOMAI_QWEATHER_API_HOST` | 必填 | 和风天气控制台提供的专属 API Host |
 | `SOMAI_QWEATHER_API_KEY` | 必填 | 和风天气项目 API Key；使用 `SecretStr`，不得写入日志 |
 | `SOMAI_WEATHER_TIMEOUT_SECONDS` | `5` | 单次和风天气请求超时秒数 |
+| `SOMAI_TAVILY_API_HOST` | `https://api.tavily.com` | Tavily API 基地址 |
+| `SOMAI_TAVILY_API_KEY` | 可选 | Tavily API Key；配置后启用 `web_search` 工具，使用 `SecretStr` |
+| `SOMAI_TAVILY_TIMEOUT_SECONDS` | `10` | 单次 Tavily 请求超时秒数 |
+| `SOMAI_TAVILY_MAX_RESULTS` | `5` | 每次搜索最多返回的来源数量 |
 | `SOMAI_MAX_MESSAGE_LENGTH` | `8000` | 用户消息 Unicode code point 上限 |
 | `SOMAI_MAX_WEBSOCKET_MESSAGE_BYTES` | `32768` | 应用解析前文本 UTF-8 字节上限；超限返回 `INVALID_MESSAGE`，连接继续 |
 | `SOMAI_WEBSOCKET_TRANSPORT_MAX_BYTES` | `1048576` | Uvicorn 紧急帧硬上限；不得小于应用上限，超限以 1009 关闭 |

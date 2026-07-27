@@ -280,6 +280,19 @@ def test_settings_configures_qweather_weather_service() -> None:
     assert settings.qweather_api_key.get_secret_value() == "weather-key"
 
 
+def test_settings_configures_optional_tavily_search() -> None:
+    settings = Settings(
+        openai_api_key="chat-secret",
+        openai_model="chat-model",
+        tavily_api_key="tavily-secret",
+    )
+
+    assert settings.tavily_api_key is not None
+    assert settings.tavily_api_key.get_secret_value() == "tavily-secret"
+    assert str(settings.tavily_api_host).rstrip("/") == "https://api.tavily.com"
+    assert settings.tavily_max_results == 5
+
+
 def test_get_settings_loads_prefixed_environment_and_caches(monkeypatch: pytest.MonkeyPatch) -> None:
     get_settings.cache_clear()
     monkeypatch.setenv("SOMAI_OPENAI_API_KEY", "environment-secret")

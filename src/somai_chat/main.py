@@ -37,6 +37,7 @@ from somai_chat.vision.analyzer import VisionAnalyzer
 from somai_chat.vision.fetcher import HttpImageFetcher
 from somai_chat.weather.client import QWeatherClient
 from somai_chat.weather.tool import create_weather_tool
+from somai_chat.web.search import TavilyClient, create_web_search_tool
 
 logger = logging.getLogger(__name__)
 WEB_DIRECTORY = Path(__file__).with_name("web")
@@ -132,6 +133,22 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
                     api_key=resolved_settings.qweather_api_key.get_secret_value(),
                 )
                 owned_resources.extend([model, weather_http_client])
+                tools = [create_weather_tool(weather_client), create_time_tool(), create_camera_capture_tool()]
+                if resolved_settings.tavily_api_key is not None:
+                    search_http_client = httpx.AsyncClient(
+                        base_url=str(resolved_settings.tavily_api_host).rstrip("/"),
+                        timeout=resolved_settings.tavily_timeout_seconds,
+                    )
+                    owned_resources.append(search_http_client)
+                    tools.append(
+                        create_web_search_tool(
+                            TavilyClient(
+                                search_http_client,
+                                api_key=resolved_settings.tavily_api_key.get_secret_value(),
+                                max_results=resolved_settings.tavily_max_results,
+                            )
+                        )
+                    )
                 image_analyzer = None
                 if resolved_settings.vision_model is not None:
                     vision_http_client = httpx.AsyncClient(timeout=resolved_settings.vision_timeout_seconds)
@@ -143,7 +160,7 @@ def create_app(settings: Settings | None = None, runtime: ConversationRuntime | 
                 resolved_runtime = ConversationRuntime(
                     build_conversation_graph(
                         model,
-                        tools=[create_weather_tool(weather_client), create_time_tool(), create_camera_capture_tool()],
+                        tools=tools,
                     ),
                     model_unavailable_classifier=is_model_provider_unavailable,
                     image_analyzer=image_analyzer,

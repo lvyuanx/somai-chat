@@ -33,6 +33,36 @@ def test_application_registers_time_tool_with_conversation_graph(monkeypatch: py
     assert {tool.name for tool in captured["tools"]} == {"camera_capture", "get_current_time", "get_weather"}
 
 
+def test_application_registers_web_search_when_tavily_is_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def build_graph(_model: object, *, tools: list[object]) -> object:
+        captured["tools"] = tools
+        return object()
+
+    monkeypatch.setattr(main_module, "create_chat_model", lambda _settings: object())
+    monkeypatch.setattr(main_module, "build_conversation_graph", build_graph)
+    monkeypatch.setattr(main_module.httpx, "AsyncClient", lambda **_kwargs: object())
+    settings = Settings(
+        _env_file=None,
+        openai_api_key=SecretStr("test-secret"),
+        openai_model="test-model",
+        qweather_api_host="https://example.qweatherapi.com",
+        qweather_api_key=SecretStr("weather-key"),
+        tavily_api_key=SecretStr("tavily-key"),
+    )
+
+    with TestClient(main_module.create_app(settings=settings)):
+        pass
+
+    assert {tool.name for tool in captured["tools"]} == {
+        "camera_capture",
+        "get_current_time",
+        "get_weather",
+        "web_search",
+    }
+
+
 def test_run_loads_dotenv_and_passes_server_settings_to_uvicorn(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

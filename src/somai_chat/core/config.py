@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     qweather_api_host: AnyHttpUrl | None = None
     qweather_api_key: SecretStr | None = None
     weather_timeout_seconds: float = Field(default=5, gt=0)
+    tavily_api_host: AnyHttpUrl = AnyHttpUrl("https://api.tavily.com")
+    tavily_api_key: SecretStr | None = None
+    tavily_timeout_seconds: float = Field(default=10, gt=0)
+    tavily_max_results: int = Field(default=5, ge=1, le=20)
     max_message_length: int = Field(default=8000, gt=0)
     max_websocket_message_bytes: int = Field(default=32768, gt=0)
     websocket_transport_max_bytes: int = Field(default=1048576, gt=0)
@@ -135,6 +139,18 @@ class Settings(BaseSettings):
             secret = secret.strip()
             if not secret:
                 raise ValueError("QWeather API key must not be empty")
+        return secret
+
+    @field_validator("tavily_api_key", mode="before")
+    @classmethod
+    def validate_tavily_api_key(cls, value: object) -> object:
+        if value is None:
+            return None
+        secret = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if isinstance(secret, str):
+            secret = secret.strip()
+            if not secret:
+                raise ValueError("Tavily API key must not be empty")
         return secret
 
     @field_validator("openai_model", mode="before")

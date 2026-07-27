@@ -2,6 +2,8 @@
 
 ## 模块简介
 
+本模块包含 Somai Web 相关能力：调试台静态资源，以及可选的 Tavily 互联网搜索适配器。
+
 `web` 是无前端构建步骤的 SOMAI 调试运行台，只使用浏览器原生 HTML、CSS、DOM 与 WebSocket API。
 界面采用深色、专注的三栏对话工作台视觉，避免影响调试信息的可读性。作为管理后台内嵌工作区时，使用圆角玻璃
 表面与后台的深海蓝紫主题对齐。
@@ -14,6 +16,14 @@
 - 将合法会话 ID 保存在浏览器本地；新建会话时更换 ID，清空显示时不改变服务端状态。
 
 ## 目录说明
+
+- `search.py`：Tavily 异步 HTTP 客户端和 `web_search` LangChain 工具。
+
+## 搜索接口
+
+`TavilyClient` 只接收组合根创建的 `httpx.AsyncClient` 和敏感 API Key，调用 Tavily `/search` 的 basic 模式，
+并将结果裁剪为标题、链接和摘要。`create_web_search_tool` 对空/过长查询及上游异常返回安全错误。
+搜索只有在 `Settings.tavily_api_key` 配置后才会由 `main` 注册；客户端生命周期由应用 lifespan 管理。
 
 - `index.html`：三栏语义结构、表单与可访问性标记。
 - `app.css`：工业设备控制台基础视觉、消息状态、组件样式和动效定义。
