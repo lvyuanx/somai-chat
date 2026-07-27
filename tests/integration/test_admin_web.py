@@ -58,6 +58,17 @@ def test_admin_has_capability_management_cards() -> None:
     assert "/capabilities" in capability
 
 
+def test_revealed_capability_key_uses_the_existing_input() -> None:
+    capability = (
+        Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src" / "CapabilityManagement.vue"
+    ).read_text(encoding="utf-8")
+
+    assert ':model-value="capabilityKeyInputValue(draft)"' in capability
+    assert ":type=\"draft.revealed_api_key ? 'text' : 'password'\"" in capability
+    assert '@input="updateCapabilityKeyInput(draft, $event)"' in capability
+    assert "revealed-secret" not in capability
+
+
 def test_admin_vue_components_stay_within_size_limit() -> None:
     directory = Path(__file__).resolve().parents[2] / "frontend" / "admin" / "src"
     for component in directory.glob("*.vue"):

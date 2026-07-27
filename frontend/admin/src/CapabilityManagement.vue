@@ -3,8 +3,10 @@ import { ElMessage } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { Hide, Refresh, View } from "@element-plus/icons-vue";
 import {
+  capabilityKeyInputValue,
   createCapabilityDraft,
   createUpdatePayload,
+  updateCapabilityKeyInput,
   validateCapabilityDraft,
 } from "./capability-state.js";
 
@@ -111,11 +113,11 @@ onMounted(loadCapabilities);
             <el-form-item label="API Key">
               <div class="capability-secret">
                 <el-input
-                  v-model="draft.replacement_api_key"
-                  type="password"
-                  show-password
+                  :model-value="capabilityKeyInputValue(draft)"
+                  :type="draft.revealed_api_key ? 'text' : 'password'"
+                  :show-password="!draft.revealed_api_key"
                   :placeholder="draft.clear_api_key ? '保存后将清除' : draft.api_key_masked || '输入 API Key'"
-                  @input="draft.clear_api_key = false"
+                  @input="updateCapabilityKeyInput(draft, $event)"
                 />
                 <el-button
                   v-if="draft.can_reveal_api_key && !draft.clear_api_key"
@@ -124,7 +126,6 @@ onMounted(loadCapabilities);
                   @click="revealKey(draft)"
                 />
               </div>
-              <code v-if="draft.revealed_api_key" class="revealed-secret">{{ draft.revealed_api_key }}</code>
               <el-button
                 v-if="draft.can_reveal_api_key && !draft.clear_api_key"
                 class="clear-secret"

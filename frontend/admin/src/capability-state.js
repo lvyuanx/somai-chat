@@ -9,6 +9,16 @@ export function createCapabilityDraft(view) {
   };
 }
 
+export function capabilityKeyInputValue(draft) {
+  return draft.revealed_api_key || draft.replacement_api_key;
+}
+
+export function updateCapabilityKeyInput(draft, value) {
+  draft.revealed_api_key = "";
+  draft.replacement_api_key = value;
+  draft.clear_api_key = false;
+}
+
 export function createUpdatePayload(draft) {
   const payload = {
     enabled: draft.enabled,
