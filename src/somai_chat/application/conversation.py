@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from time import monotonic
 from typing import Protocol, cast
 from uuid import uuid4
 
@@ -24,6 +25,7 @@ from somai_chat.vision.analyzer import ImageAnalyzer
 SendEvent = Callable[[ServerEvent], Awaitable[None]]
 ModelUnavailableClassifier = Callable[[BaseException], bool]
 _LIFECYCLE_REENTRY_MESSAGE = "Conversation lifecycle cannot be changed from the send callback"
+_VISION_WORKFLOW_NODE_ID = "node_vision_analysis"
 
 
 def _never_model_unavailable(error: BaseException) -> bool:
@@ -132,7 +134,40 @@ class ConversationRuntime:
             if image_urls:
                 if self._image_analyzer is None:
                     raise SomaiError(ErrorCode.MODEL_UNAVAILABLE, "Model provider is unavailable")
-                observation = await self._image_analyzer.analyze(content, image_urls)
+                started_at = monotonic()
+                yield ServerEvent.create(
+                    "workflow.node.started",
+                    {
+                        "response_id": response_id,
+                        "node_id": _VISION_WORKFLOW_NODE_ID,
+                        "kind": "tool",
+                        "name": "vision_analysis",
+                        "input": {"image_count": len(image_urls)},
+                        "input_truncated": False,
+                    },
+                )
+                try:
+                    observation = await self._image_analyzer.analyze(content, image_urls)
+                except Exception:
+                    yield ServerEvent.create(
+                        "workflow.node.failed",
+                        {
+                            "response_id": response_id,
+                            "node_id": _VISION_WORKFLOW_NODE_ID,
+                            "duration_ms": round(max(0.0, monotonic() - started_at) * 1000),
+                        },
+                    )
+                    raise
+                yield ServerEvent.create(
+                    "workflow.node.completed",
+                    {
+                        "response_id": response_id,
+                        "node_id": _VISION_WORKFLOW_NODE_ID,
+                        "duration_ms": round(max(0.0, monotonic() - started_at) * 1000),
+                        "output": {"status": "analyzed"},
+                        "output_truncated": False,
+                    },
+                )
                 enriched_content = f"{content}\n\n{observation}"
             stream_events = getattr(self._graph, "astream_events", None)
             if callable(stream_events):

@@ -97,6 +97,12 @@ class RecordingImageAnalyzer:
         return "[UNTRUSTED_IMAGE_OBSERVATION]\n一只杯子\n[/UNTRUSTED_IMAGE_OBSERVATION]"
 
 
+class FailingImageAnalyzer:
+    async def analyze(self, content: str, image_urls: tuple[str, ...]) -> str:
+        del content, image_urls
+        raise RuntimeError("vision-secret-detail")
+
+
 class FailingGraph:
     async def astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[tuple[AIMessageChunk, dict[str, Any]]]:
         del args, kwargs
@@ -200,6 +206,77 @@ async def test_runtime_uses_vision_only_for_image_turns_and_keeps_chat_graph_tex
 
     assert analyzer.calls == [("图片里是什么？", ("http://images.example.test/cup.jpg",))]
     assert graph.content == "图片里是什么？\n\n[UNTRUSTED_IMAGE_OBSERVATION]\n一只杯子\n[/UNTRUSTED_IMAGE_OBSERVATION]"
+
+
+@pytest.mark.asyncio
+async def test_runtime_emits_workflow_tool_node_for_image_analysis() -> None:
+    graph = RecordingGraph()
+    analyzer = RecordingImageAnalyzer()
+    runtime = ConversationRuntime(cast(ConversationGraph, graph), image_analyzer=analyzer)
+
+    events = [
+        event
+        async for event in runtime.stream(
+            "conv-1",
+            "msg-1",
+            "图片里是什么？",
+            image_urls=("http://images.example.test/cup.jpg",),
+            response_id="resp-image",
+        )
+    ]
+
+    assert [event.type for event in events] == [
+        "response.started",
+        "workflow.node.started",
+        "workflow.node.completed",
+        "response.delta",
+        "response.completed",
+    ]
+    started = events[1]
+    completed = events[2]
+    assert started.data == {
+        "response_id": "resp-image",
+        "node_id": "node_vision_analysis",
+        "kind": "tool",
+        "name": "vision_analysis",
+        "input": {"image_count": 1},
+        "input_truncated": False,
+    }
+    assert completed.data["response_id"] == "resp-image"
+    assert completed.data["node_id"] == "node_vision_analysis"
+    assert int(completed.data["duration_ms"]) >= 0
+    assert completed.data["output"] == {"status": "analyzed"}
+    assert completed.data["output_truncated"] is False
+    assert "cup.jpg" not in str(started.data)
+
+
+@pytest.mark.asyncio
+async def test_runtime_marks_failed_image_analysis_without_leaking_details() -> None:
+    runtime = ConversationRuntime(cast(ConversationGraph, RecordingGraph()), image_analyzer=FailingImageAnalyzer())
+    events: list[ServerEvent] = []
+
+    with pytest.raises(SomaiError) as captured:
+        async for event in runtime.stream(
+            "conv-1",
+            "msg-1",
+            "图片里是什么？",
+            image_urls=("http://images.example.test/secret-cup.jpg",),
+            response_id="resp-image-fail",
+        ):
+            events.append(event)
+
+    assert captured.value.code is ErrorCode.GENERATION_FAILED
+    assert [event.type for event in events] == [
+        "response.started",
+        "workflow.node.started",
+        "workflow.node.failed",
+    ]
+    failed = events[-1]
+    assert failed.data["response_id"] == "resp-image-fail"
+    assert failed.data["node_id"] == "node_vision_analysis"
+    assert int(failed.data["duration_ms"]) >= 0
+    assert "secret-cup.jpg" not in str(failed.data)
+    assert "vision-secret-detail" not in str(failed.data)
 
 
 @pytest.mark.asyncio

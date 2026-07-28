@@ -160,13 +160,18 @@ function event(type, data) {
     response_id: "resp-1", node_id: "tool-1", kind: "tool", name: "get_weather",
     input: {city: "武汉"}, input_truncated: false,
   }));
+  view.handle(event("workflow.node.started", {
+    response_id: "resp-1", node_id: "vision-1", kind: "tool", name: "vision_analysis",
+    input: {image_count: 1}, input_truncated: false,
+  }));
 
-  assert.equal(elements.desktopList.childElementCount, 2);
-  assert.equal(elements.mobileList.childElementCount, 2);
+  assert.equal(elements.desktopList.childElementCount, 3);
+  assert.equal(elements.mobileList.childElementCount, 3);
   assert.match(elements.desktopList.textContent, /大模型/);
   assert.match(elements.desktopList.textContent, /天气工具/);
+  assert.match(elements.desktopList.textContent, /视觉识别/);
   assert.equal(elements.summary.hidden, false);
-  assert.equal(elements.summaryName.textContent, "天气工具");
+  assert.equal(elements.summaryName.textContent, "视觉识别");
   assert.match(elements.desktopList.children[1].textContent, /武汉/);
   assert.equal(elements.desktopList.children[1].dataset.status, "running");
 

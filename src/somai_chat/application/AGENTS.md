@@ -27,6 +27,8 @@
 
 `ConversationRuntime.stream(...)` 把会话标识映射为
 LangGraph `thread_id`，消费 `astream_events`，过滤空的 AI 文本块，拼接最终文本并累加各流式块提供的 usage。
+带图片的轮次会先把注入的视觉分析器调用映射为一个 `vision_analysis` 工具节点，再把不可信图片观察文本附加给
+主对话 Graph；该节点只记录生命周期和耗时，不暴露图片 URL、用户提示词或视觉模型原始文本。
 每次 `on_chat_model_start/end/error` 映射为一个 `model` 节点，每次 `on_tool_start/end/error` 映射为一个独立工具节点；
 并行工具通过各自 run ID 关联。工具输入在 started 中发送，输出在 completed 中发送，原始异常永不进入 failed 事件。
 为兼容已注入的旧 Graph 门面，不支持 `astream_events` 时保留原消息流翻译，但不会产生工作流节点。

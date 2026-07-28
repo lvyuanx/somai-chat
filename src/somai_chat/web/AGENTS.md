@@ -35,6 +35,7 @@
 - `view.js`：通过注入的 DOM、window、elements 与 limits
   管理有界消息、live status 和 RAF 渲染。
 - `workflow.js`：管理最近一轮节点状态、双端 DOM 渲染、节点载荷展开和移动抽屉焦点。
+  视觉识别节点 `vision_analysis` 会显示为“视觉识别”，和主对话大模型区分开来。
 - `markdown.js`：只通过 DOM 文本 API 构建允许的安全 Markdown 子集。
 - `package.json`：把同目录 JavaScript 声明为原生 ES module，供浏览器与 Node 检查使用。
 - `__init__.py`：包标识，使静态资源随 Python 包分发。

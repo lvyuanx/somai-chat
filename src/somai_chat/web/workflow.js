@@ -3,6 +3,7 @@ const TOOL_LABELS = {
   get_weather: "天气工具",
   web_search: "联网搜索",
   camera_capture: "摄像头工具",
+  vision_analysis: "视觉识别",
 };
 
 const STATUS_LABELS = {
