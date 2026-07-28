@@ -77,13 +77,16 @@ class CameraActionGraph:
     async def astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[tuple[ToolMessage, dict[str, Any]]]:
         del args, kwargs
         try:
-            yield ToolMessage(
-                content=(
-                    '{"somai_action":"camera.capture","request_id":"cam_req_1","camera":"back",'
-                    '"count":1,"reason":"查看用户手中的物体"}'
+            yield (
+                ToolMessage(
+                    content=(
+                        '{"somai_action":"camera.capture","request_id":"cam_req_1","camera":"back",'
+                        '"count":1,"reason":"查看用户手中的物体"}'
+                    ),
+                    tool_call_id="camera-call",
                 ),
-                tool_call_id="camera-call",
-            ), {}
+                {},
+            )
         finally:
             self.finished = True
 

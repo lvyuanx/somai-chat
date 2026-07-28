@@ -2,7 +2,7 @@
 
 ## 模块简介与职责
 
-`somai_chat` 是模块化单体的 Python 包。`main.py` 是唯一组合根：集中读取 `Settings`、配置 JSON 日志、创建模型和
+`somai_chat` 是模块化单体的 Python 包。`main.py` 是唯一组合根：集中读取 `Settings`、配置 Loguru 日志、创建模型和
 能力服务及共享 HTTP 客户端、编译动态工具 LangGraph，并把 Provider 的中立错误分类 callback 注入 `ConversationRuntime`，最后装配健康路由、版本化
 WebSocket 与包内静态调试台。
 
@@ -22,10 +22,10 @@ WebSocket 与包内静态调试台。
 
 ## 装配与数据流
 
-lifespan 成功时将 Settings、Runtime、能力服务和 ready 状态注入 `app.state`；依赖创建失败时应用仍能提供静态页和 liveness，但 readiness 为 503。组合根使用 Core 的拆分数据库字段生成连接 URL，Alembic 复用同一入口。生产与开发使用 MySQL 能力仓库，`test` 环境使用进程内仓库支持无需 MySQL 的真实传输测试。环境变量只补齐缺失能力记录。
+lifespan 成功时将 Settings、Runtime、能力服务和 ready 状态注入 `app.state`；依赖创建失败时应用仍能提供静态页和 liveness，但 readiness 为 503。组合根使用 Core 的拆分数据库字段生成连接 URL，Alembic 复用同一入口，并在启动时把 `Settings.log_level` 与 `Settings.log_dir` 传给 `core.logging.configure_logging()`。生产与开发使用 MySQL 能力仓库，`test` 环境使用进程内仓库支持无需 MySQL 的真实传输测试。环境变量只补齐缺失能力记录。
 
 客户端文本依次经过 `api -> application -> agent -> providers`，模型消息块再反向转换为统一服务端信封。
-Application 不导入 Provider/OpenAI/httpx；组合根只注入 `Callable[[BaseException], bool]` 分类边界。
+Application 不导入 Provider/OpenAI/httpx；组合根只注入 `Callable[[BaseException], bool]` 分类边界。业务与组合根日志统一通过 `core.logging.get_logger()` 获取带 `source="project"` 的 Loguru logger。
 静态路径始终从包位置解析，不依赖当前工作目录。安全中间件为所有响应设置 CSP 和 `nosniff`；嵌入模式的
 Chat 页面仅允许同源管理后台以 iframe 加载。
 

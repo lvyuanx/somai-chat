@@ -3,7 +3,7 @@
 ## 模块简介
 
 `core` 提供 SOMAI Chat 中不依赖业务流程的基础能力，
-当前负责集中式配置管理、稳定错误契约与结构化日志。
+当前负责集中式配置管理、稳定错误契约与基于 Loguru 的统一日志。
 
 ## 主要职责
 
@@ -17,7 +17,7 @@
 
 - `config.py`：定义 `Settings` 配置模型和缓存的配置入口。
 - `errors.py`：定义稳定错误码 `ErrorCode` 和安全异常 `SomaiError`。
-- `logging.py`：定义 JSON formatter 与进程日志配置入口。
+- `logging.py`：定义 Loguru sink、标准库拦截器、控制台配色与 `JsonFormatter` 兼容入口。
 - `__init__.py`：包标识，不隐式导出实现。
 
 ## 核心类
@@ -30,8 +30,10 @@
 
 - `get_settings()`：返回进程内缓存的 `Settings` 实例，供组合根注入其他模块。
 - `SomaiError(code, safe_message)`：创建可安全转换为字符串的应用错误。
-- `configure_logging(level)`：幂等配置 `somai_chat` logger 输出逐行 JSON，不修改 root handler。
-- `JsonFormatter`：输出时间、级别、logger、固定消息及允许的关联字段。
+- `configure_logging(level, log_dir=None, stream=None)`：幂等配置按日期切分的全量、项目与错误日志，并保留 root/Uvicorn handler。
+- `setup_logging(log_dir=None, log_level=None, stream=None)`：向后兼容的日志配置别名。
+- `get_logger()`：返回绑定 `source="project"` 的 Loguru logger。
+- `JsonFormatter`：输出时间、级别、logger、固定消息及允许的关联字段，供测试和兼容调用使用。
 
 ## 主要流程
 
@@ -49,8 +51,8 @@
 业务模块不直接读取环境变量。
 模块内部错误由使用方映射为 `ErrorCode` 和安全消息后跨边界传递。
 日志记录只接收 `connection_id`、`conversation_id`、`message_id`、`response_id`、
-`error_code` 等关联字段，
-不会自动序列化任意 extra 字段。
+`error_code` 等关联字段；项目记录通过 `source="project"` 路由到项目日志与控制台，
+不会自动序列化任意额外字段。
 
 ## 配置说明
 
@@ -64,7 +66,8 @@ pepper 与加密密钥均使用敏感类型保存。`SOMAI_CAPABILITY_SECRET_ENC
 `replace`、`change-me`、`your-secret` 或 `placeholder` 的管理员密钥材料和数据库密码，包括能力加密密钥。
 `max_websocket_message_bytes` 默认 32768，是应用解析前可恢复阈值；
 `websocket_transport_max_bytes` 默认 1048576，是 Uvicorn 紧急硬上限，必须为正且不小于应用阈值。
-`media_root` 默认是当前工作目录下的 `media`，图片上传服务在其下按 `uploads/<年>/<月>/<日>/` 保存图片；
+`media_root` 默认是当前工作目录下的 `media`，`log_dir` 默认是当前工作目录下的 `logs`，
+图片上传服务在其下按 `uploads/<年>/<月>/<日>/` 保存图片；
 可通过 `SOMAI_MEDIA_ROOT` 配置为其他目录。
 `python -m somai_chat.main` 先解析同一份 Settings，再把 host、port、开发环境 reload 状态及
 `websocket_transport_max_bytes` 传给 Uvicorn。
@@ -86,7 +89,7 @@ pepper 与加密密钥均使用敏感类型保存。`SOMAI_CAPABILITY_SECRET_ENC
 或供应商原始错误插入日志消息。
 结构化关联字段包括 `connection_id`、`conversation_id`、`message_id`、
 `response_id` 与 `error_code`，其他 extra 字段不会序列化。
-root 与 Uvicorn 保留自身运维 handler 且不经过 `JsonFormatter`；`langchain`、`langchain_openai`、`openai`、
-`httpx`、`httpcore` namespace 禁止传播，避免动态供应商诊断进入受信任流。
+root 与 Uvicorn 保留自身运维 handler 且不被替换；`langchain`、`langchain_openai`、`openai`、
+`httpx`、`httpcore` namespace 只通过拦截器进入统一日志流，避免动态供应商诊断进入受信任 project 输出。
 容器和 wheel 不携带 `.env`；运行时必须显式注入必填模型字段。模型配置不可用时组合根降级为
 liveness/静态页可用、readiness 503，而不是在健康探针中请求供应商。

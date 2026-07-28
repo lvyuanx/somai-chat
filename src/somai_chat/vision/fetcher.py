@@ -16,9 +16,8 @@ class HttpImageFetcher:
     @staticmethod
     def _allows_uploaded_loopback(url: str) -> bool:
         parsed = urlsplit(url)
-        return (
-            parsed.hostname in {"127.0.0.1", "localhost", "0.0.0.0"}
-            and parsed.path.startswith("/api/v1/images/img_")
+        return parsed.hostname in {"127.0.0.1", "localhost", "0.0.0.0"} and parsed.path.startswith(
+            "/api/v1/images/img_"
         )
 
     async def fetch(self, url: str) -> tuple[str, bytes]:

@@ -153,11 +153,15 @@ def parse_client_event(payload: object, max_message_length: int, max_image_urls:
     invalid_content = isinstance(event, MessageCreate) and (
         not event.data.content or len(event.data.content) > max_message_length
     )
-    invalid_image_urls = isinstance(event, MessageCreate) and event.data.image_urls is not None and (
-        len(event.data.image_urls) > max_image_urls
+    invalid_image_urls = (
+        isinstance(event, MessageCreate)
+        and event.data.image_urls is not None
+        and (len(event.data.image_urls) > max_image_urls)
     )
-    invalid_image_ids = isinstance(event, MessageCreate) and event.data.image_ids is not None and (
-        len(event.data.image_ids) > max_image_urls
+    invalid_image_ids = (
+        isinstance(event, MessageCreate)
+        and event.data.image_ids is not None
+        and (len(event.data.image_ids) > max_image_urls)
     )
     if event is None or invalid_content or invalid_image_urls or invalid_image_ids:
         raise SomaiError(ErrorCode.INVALID_MESSAGE, "Invalid client event")

@@ -28,8 +28,9 @@ MVP 使用进程内 Checkpointer 和会话并发控制，仅支持单进程部�
 - 健康检查为 `/health/live` 与 `/health/ready`；就绪探针不得调用外部模型。
 - 对话地址为 `/api/v1/chat/ws/{conversation_id}`，事件使用 `type/event_id/timestamp/data` 统一信封。
 - 浏览器 Origin 必须匹配集中配置；设备客户端可以不发送 Origin；文本同时受字符数和 UTF-8 帧字节限制。
-- 应用 JSON 日志仅接收 `somai_chat` namespace 的固定消息、关联 ID 与稳定错误码；隔离供应商动态日志，
-  不替换 root/Uvicorn 运维 handler，不记录正文、回复、密钥、URL 或供应商原始错误。
+- 应用日志由 `core.logging` 中的 Loguru sinks 统一配置；`source="project"` 只路由到项目与控制台输出，
+  全量与错误文件接收固定消息、关联 ID 与稳定错误码；隔离供应商动态日志，不替换 root/Uvicorn 运维
+  handler，不记录正文、回复、密钥、URL 或供应商原始错误。
 
 ## 开发流程
 

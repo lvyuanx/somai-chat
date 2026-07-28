@@ -62,6 +62,7 @@ Uvicorn，不是数据库地址。旧 `SOMAI_DATABASE_URL` 不再支持；升级
 |---|---|---|
 | `SOMAI_ENVIRONMENT` | `development` | `development`、`test` 或 `production`；development 启用 reload |
 | `SOMAI_LOG_LEVEL` | `INFO` | `DEBUG`、`INFO`、`WARNING` 或 `ERROR` |
+| `SOMAI_LOG_DIR` | `./logs` | Loguru 日志目录；按日期写入全量、项目与错误日志 |
 | `SOMAI_HOST` | `0.0.0.0` | Uvicorn 监听地址 |
 | `SOMAI_PORT` | `8000` | Uvicorn 监听端口 |
 | `SOMAI_OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容 HTTP 基地址 |
@@ -184,8 +185,8 @@ docker run --rm --env-file .env -e SOMAI_ENVIRONMENT=production -e SOMAI_PORT=90
 
 MVP 的 Checkpointer、会话锁和生成状态都在单进程内存中：重启即丢失，不能直接增加 Uvicorn worker、容器副本或多实例。扩容前必须替换为持久化/共享 Checkpointer 与分布式会话锁。
 
-应用日志仅由 `somai_chat` namespace 输出 JSON，并记录固定消息、关联 ID 和稳定错误码；root/Uvicorn 运维日志不经
-应用 JSON formatter，LangChain/OpenAI/httpx/httpcore 动态日志被隔离。任何日志都不得记录 API Key、完整用户消息、
+应用日志由 Loguru 统一输出：`source="project"` 进入项目与控制台日志，root/Uvicorn 运维日志不被替换，
+LangChain/OpenAI/httpx/httpcore 动态日志经拦截器进入统一日志流。任何日志都不得记录 API Key、完整用户消息、
 完整模型回复或供应商原始错误。文本同时受 code point、应用可恢复 UTF-8 字节上限与更大的传输硬上限约束。
 
 未来扩展点：向 `build_conversation_graph` 注入持久 Checkpointer；在 Agent Graph 增加明确的工具/动作节点和运行时能力清单；端侧通过当前文本 WebSocket 前后接入 ASR/TTS。新增事件应保持统一信封和既有终态语义。

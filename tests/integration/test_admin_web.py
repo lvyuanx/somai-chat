@@ -76,8 +76,8 @@ def test_capability_key_clear_button_clears_the_current_draft_only() -> None:
 
     assert 'v-if="draft.can_reveal_api_key"' in capability
     assert "clearCapabilityKeyInput(draft)" in capability
-    assert ":icon=\"Delete\"" in capability
-    assert "@keydown.delete=\"handleCapabilityKeydown(draft, $event)\"" in capability
+    assert ':icon="Delete"' in capability
+    assert '@keydown.delete="handleCapabilityKeydown(draft, $event)"' in capability
     assert "clear_api_key" in capability
 
 

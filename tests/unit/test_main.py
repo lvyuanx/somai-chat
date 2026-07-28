@@ -39,6 +39,40 @@ def test_application_uses_generated_database_connection_url(monkeypatch: pytest.
     assert (url.username, url.password, url.host, url.database) == ("robot", "p@ssword", "db", "chat")
 
 
+def test_application_passes_log_dir_to_logging_setup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class Closeable:
+        async def close(self) -> None:
+            return None
+
+    def create_sessions(url: str) -> tuple[Closeable, object]:
+        del url
+        return Closeable(), object()
+
+    def fake_configure_logging(level: str, *, log_dir: Path | None = None, stream: object | None = None) -> None:
+        captured["level"] = level
+        captured["log_dir"] = log_dir
+        captured["stream"] = stream
+
+    settings = Settings(
+        _env_file=None,
+        openai_api_key="secret",
+        openai_model="model",
+        log_dir=tmp_path / "runtime-logs",
+    )
+    monkeypatch.setattr(main_module, "create_session_factory", create_sessions)
+    monkeypatch.setattr(main_module, "configure_logging", fake_configure_logging)
+
+    with TestClient(main_module.create_app(settings=settings, runtime=cast(ConversationRuntime, object()))):
+        pass
+
+    assert captured == {"level": "INFO", "log_dir": tmp_path / "runtime-logs", "stream": None}
+
+
 def test_application_registers_capability_admin_routes() -> None:
     paths = set(main_module.create_app().openapi()["paths"])
 

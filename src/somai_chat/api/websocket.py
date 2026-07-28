@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import logging
 import re
 from collections.abc import Awaitable, Callable
 from typing import cast
@@ -16,9 +15,10 @@ from somai_chat.api.protocol import ActionResult, MessageCreate, Ping, ResponseC
 from somai_chat.application.conversation import ConversationRuntime, ConversationSession
 from somai_chat.core.config import Settings, normalize_origin
 from somai_chat.core.errors import ErrorCode, SomaiError
+from somai_chat.core.logging import get_logger
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
-logger = logging.getLogger(__name__)
+logger = get_logger()
 _CONVERSATION_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$", re.ASCII)
 
 
@@ -80,18 +80,10 @@ def _camera_failure_message(status: str, error_code: str | None) -> str:
 async def _send_camera_failure(send: Callable[[ServerEvent], Awaitable[None]], result: ActionResult) -> None:
     data = result.data
     content = _camera_failure_message(data.status, data.error_code)
+    await send(ServerEvent.create("response.started", {"response_id": data.response_id, "message_id": data.message_id}))
+    await send(ServerEvent.create("response.delta", {"response_id": data.response_id, "delta": content}))
     await send(
-        ServerEvent.create(
-            "response.started", {"response_id": data.response_id, "message_id": data.message_id}
-        )
-    )
-    await send(
-        ServerEvent.create("response.delta", {"response_id": data.response_id, "delta": content})
-    )
-    await send(
-        ServerEvent.create(
-            "response.completed", {"response_id": data.response_id, "content": content, "usage": None}
-        )
+        ServerEvent.create("response.completed", {"response_id": data.response_id, "content": content, "usage": None})
     )
 
 
@@ -124,6 +116,7 @@ async def _receive_text(websocket: WebSocket, max_bytes: int) -> str:
 async def conversation_socket(websocket: WebSocket, conversation_id: str) -> None:
     connection_id = f"conn_{uuid4().hex}"
     log_context = {"connection_id": connection_id, "conversation_id": conversation_id}
+    connection_logger = logger.bind(**log_context)
     settings = cast(Settings | None, getattr(websocket.app.state, "settings", None))
     runtime = cast(ConversationRuntime | None, getattr(websocket.app.state, "runtime", None))
     repository = cast(ClientRepository | None, getattr(websocket.app.state, "client_repository", None))
@@ -131,22 +124,22 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
     origin = websocket.headers.get("origin")
     await websocket.accept()
     if _CONVERSATION_ID.fullmatch(conversation_id) is None:
-        logger.info("conversation rejected", extra=log_context)
+        connection_logger.info("conversation rejected")
         await websocket.close(code=1008)
         return
     if settings is None or runtime is None or not websocket.app.state.ready:
-        logger.info("conversation rejected", extra=log_context)
+        connection_logger.info("conversation rejected")
         await websocket.close(code=1013)
         return
     if origin is not None:
         try:
             normalized_origin = normalize_origin(origin)
         except ValueError:
-            logger.info("conversation rejected", extra=log_context)
+            connection_logger.info("conversation rejected")
             await websocket.close(code=1008)
             return
         if not _origin_is_allowed(websocket, normalized_origin, settings):
-            logger.info("conversation rejected", extra=log_context)
+            connection_logger.info("conversation rejected")
             await websocket.close(code=1008)
             return
     admin_session = websocket.scope.get("session")
@@ -157,12 +150,12 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
     if not is_administrator:
         authorization = websocket.headers.get("authorization", "")
         if repository is None or not authorization.startswith("Bearer "):
-            logger.info("conversation rejected", extra=log_context)
+            connection_logger.info("conversation rejected")
             await websocket.close(code=1008)
             return
         client = await repository.authenticate(authorization.removeprefix("Bearer "))
         if client is None:
-            logger.info("conversation rejected", extra=log_context)
+            connection_logger.info("conversation rejected")
             await websocket.close(code=1008)
             return
         client_id = client.id
@@ -175,21 +168,17 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
     async def session_send(event: ServerEvent) -> None:
         if event.type == "error":
             data = event.data
-            logger.warning(
-                "conversation generation error",
-                extra={
-                    **log_context,
-                    "message_id": data.get("message_id"),
-                    "response_id": data.get("response_id"),
-                    "error_code": data.get("code"),
-                },
-            )
+            connection_logger.bind(
+                message_id=data.get("message_id"),
+                response_id=data.get("response_id"),
+                error_code=data.get("code"),
+            ).warning("conversation generation error")
         await raw_send(event)
 
     is_registered = False
     if client_id is not None:
         if presence is None:
-            logger.info("conversation rejected", extra=log_context)
+            connection_logger.info("conversation rejected")
             await websocket.close(code=1013)
             return
         previous_connection = await presence.replace(
@@ -213,7 +202,7 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
                 },
             )
         )
-        logger.info("conversation connected", extra=log_context)
+        connection_logger.info("conversation connected")
         while True:
             message_id: str | None = None
             response_id: str | None = None
@@ -241,15 +230,11 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
                 elif isinstance(event, Ping):
                     await raw_send(ServerEvent.create("pong", {"correlation_id": event.data.correlation_id}))
             except SomaiError as safe_error:
-                logger.info(
-                    "conversation request error",
-                    extra={
-                        **log_context,
-                        "message_id": message_id,
-                        "response_id": response_id,
-                        "error_code": safe_error.code,
-                    },
-                )
+                connection_logger.bind(
+                    message_id=message_id,
+                    response_id=response_id,
+                    error_code=safe_error.code,
+                ).info("conversation request error")
                 await raw_send(
                     _error_event(
                         safe_error,
@@ -265,4 +250,4 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
         finally:
             if is_registered and client_id is not None and presence is not None:
                 await presence.disconnect(client_id, connection_id)
-            logger.info("conversation disconnected", extra=log_context)
+            connection_logger.info("conversation disconnected")

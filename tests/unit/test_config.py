@@ -70,6 +70,16 @@ def test_settings_configures_media_root(tmp_path: Path, monkeypatch: pytest.Monk
     assert custom.media_root == tmp_path / "assets"
 
 
+def test_settings_configures_log_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    settings = Settings(openai_api_key="secret", openai_model="chat-model")
+
+    assert settings.log_dir == tmp_path / "logs"
+
+    custom = Settings(openai_api_key="secret", openai_model="chat-model", log_dir=tmp_path / "logs/custom")
+    assert custom.log_dir == tmp_path / "logs/custom"
+
+
 def test_settings_configures_database_and_administrator_credentials() -> None:
     settings = Settings(
         openai_api_key="chat-secret",

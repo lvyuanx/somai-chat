@@ -4,9 +4,7 @@ from somai_chat.application.text_normalizer import TextNormalizer
 def test_normalizer_removes_markdown_and_expands_common_tts_units() -> None:
     normalizer = TextNormalizer()
 
-    text = normalizer.normalize(
-        "## 武汉天气\n\n气温 **34°C**，风速 `26 km/h`。\n- 多喝水"
-    )
+    text = normalizer.normalize("## 武汉天气\n\n气温 **34°C**，风速 `26 km/h`。\n- 多喝水")
 
     assert text == "武汉天气\n\n气温 34 摄氏度，风速 26 千米每小时。\n多喝水"
 

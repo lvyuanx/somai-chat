@@ -1,7 +1,6 @@
 """FastAPI application composition root."""
 
 import inspect
-import logging
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -33,13 +32,13 @@ from somai_chat.application.conversation import ConversationRuntime
 from somai_chat.capabilities.models import CapabilitySeed
 from somai_chat.capabilities.service import CapabilityService
 from somai_chat.core.config import Settings, get_settings
-from somai_chat.core.logging import configure_logging
+from somai_chat.core.logging import configure_logging, get_logger
 from somai_chat.device.tool import create_camera_capture_tool
 from somai_chat.providers.llm import create_chat_model, create_vision_model, is_model_provider_unavailable
 from somai_chat.vision.analyzer import VisionAnalyzer
 from somai_chat.vision.fetcher import HttpImageFetcher
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 WEB_DIRECTORY = Path(__file__).with_name("web")
 ADMIN_WEB_DIRECTORY = Path(__file__).with_name("admin_web") / "dist"
 _CSP_DOMAIN = re.compile(r"^[A-Za-z0-9.-]+$")
@@ -144,7 +143,7 @@ def create_app(
         try:
             if resolved_settings is None:
                 resolved_settings = get_settings()
-            configure_logging(resolved_settings.log_level)
+            configure_logging(resolved_settings.log_level, log_dir=resolved_settings.log_dir)
             database_engine, sessions = create_session_factory(resolved_settings.database_connection_url())
             owned_resources.append(database_engine)
             application.state.client_repository = ClientRepository(
@@ -192,7 +191,10 @@ def create_app(
             application.state.capability_service = resolved_capability_service
             application.state.ready = True
         except Exception:
-            configure_logging("INFO")
+            configure_logging(
+                "INFO",
+                log_dir=resolved_settings.log_dir if resolved_settings is not None else None,
+            )
             logger.error("application dependencies unavailable")
             application.state.settings = resolved_settings
             application.state.runtime = None
