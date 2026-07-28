@@ -51,8 +51,10 @@
 业务模块不直接读取环境变量。
 模块内部错误由使用方映射为 `ErrorCode` 和安全消息后跨边界传递。
 日志记录只接收 `connection_id`、`conversation_id`、`message_id`、`response_id`、
-`error_code` 等关联字段；项目记录通过 `source="project"` 路由到项目日志与控制台，
-不会自动序列化任意额外字段。
+`error_code` 等关联字段，以及 `client_id`、`client_count`、`online_count`、`capability`、
+`capability_count`、`enabled`、`event_type`、`reject_reason`、`image_count`、`environment`、
+`model` 和能力启用状态等白名单安全字段；项目记录通过 `source="project"` 路由到项目日志与控制台，
+输出时使用中文消息、中文字段名和部分中文值，不会自动序列化任意额外字段。
 
 ## 配置说明
 
@@ -88,7 +90,7 @@ pepper 与加密密钥均使用敏感类型保存。`SOMAI_CAPABILITY_SECRET_ENC
 日志调用方必须使用固定消息，不得把用户正文、模型文本、API Key
 或供应商原始错误插入日志消息。
 结构化关联字段包括 `connection_id`、`conversation_id`、`message_id`、
-`response_id` 与 `error_code`，其他 extra 字段不会序列化。
+`response_id` 与 `error_code`；常用安全 extra 字段必须进入白名单后才会输出，并在项目日志中使用中文展示名。
 root 与 Uvicorn 保留自身运维 handler 且不被替换；`langchain`、`langchain_openai`、`openai`、
 `httpx`、`httpcore` namespace 只通过拦截器进入统一日志流，避免动态供应商诊断进入受信任 project 输出。
 容器和 wheel 不携带 `.env`；运行时必须显式注入必填模型字段。模型配置不可用时组合根降级为

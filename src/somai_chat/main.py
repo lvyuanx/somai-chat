@@ -144,6 +144,13 @@ def create_app(
             if resolved_settings is None:
                 resolved_settings = get_settings()
             configure_logging(resolved_settings.log_level, log_dir=resolved_settings.log_dir)
+            logger.bind(
+                environment=resolved_settings.environment,
+                model=resolved_settings.openai_model,
+                vision_enabled=resolved_settings.vision_model is not None,
+                weather_enabled=resolved_settings.qweather_api_key is not None,
+                search_enabled=resolved_settings.tavily_api_key is not None,
+            ).info("应用启动开始")
             database_engine, sessions = create_session_factory(resolved_settings.database_connection_url())
             owned_resources.append(database_engine)
             application.state.client_repository = ClientRepository(
@@ -190,12 +197,18 @@ def create_app(
             application.state.runtime = resolved_runtime
             application.state.capability_service = resolved_capability_service
             application.state.ready = True
+            logger.bind(
+                environment=resolved_settings.environment,
+                vision_enabled=resolved_settings.vision_model is not None,
+                weather_enabled=resolved_settings.qweather_api_key is not None,
+                search_enabled=resolved_settings.tavily_api_key is not None,
+            ).info("应用启动完成")
         except Exception:
             configure_logging(
                 "INFO",
                 log_dir=resolved_settings.log_dir if resolved_settings is not None else None,
             )
-            logger.error("application dependencies unavailable")
+            logger.error("应用依赖不可用")
             application.state.settings = resolved_settings
             application.state.runtime = None
             application.state.ready = False
@@ -206,8 +219,9 @@ def create_app(
                 for resource in reversed(owned_resources):
                     await _close_resource(resource)
             except Exception:
-                logger.error("application resource shutdown failed")
+                logger.error("应用资源关闭失败")
             application.state.ready = False
+            logger.info("应用关闭完成")
 
     application = FastAPI(lifespan=lifespan)
     application.state.settings = settings
@@ -257,6 +271,7 @@ def run() -> None:
     uvicorn.run(
         "somai_chat.main:app",
         host=settings.host,
+        log_level="error",
         port=settings.port,
         reload=settings.environment == "development",
         ws_max_size=settings.websocket_transport_max_bytes,

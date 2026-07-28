@@ -115,8 +115,7 @@ async def _receive_text(websocket: WebSocket, max_bytes: int) -> str:
 @router.websocket("/ws/{conversation_id}")
 async def conversation_socket(websocket: WebSocket, conversation_id: str) -> None:
     connection_id = f"conn_{uuid4().hex}"
-    log_context = {"connection_id": connection_id, "conversation_id": conversation_id}
-    connection_logger = logger.bind(**log_context)
+    connection_logger = logger.bind(connection_id=connection_id)
     settings = cast(Settings | None, getattr(websocket.app.state, "settings", None))
     runtime = cast(ConversationRuntime | None, getattr(websocket.app.state, "runtime", None))
     repository = cast(ClientRepository | None, getattr(websocket.app.state, "client_repository", None))
@@ -124,22 +123,23 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
     origin = websocket.headers.get("origin")
     await websocket.accept()
     if _CONVERSATION_ID.fullmatch(conversation_id) is None:
-        connection_logger.info("conversation rejected")
+        connection_logger.bind(reject_reason="invalid_conversation_id").info("对话连接被拒绝")
         await websocket.close(code=1008)
         return
+    connection_logger = connection_logger.bind(conversation_id=conversation_id)
     if settings is None or runtime is None or not websocket.app.state.ready:
-        connection_logger.info("conversation rejected")
+        connection_logger.bind(reject_reason="runtime_unavailable").info("对话连接被拒绝")
         await websocket.close(code=1013)
         return
     if origin is not None:
         try:
             normalized_origin = normalize_origin(origin)
         except ValueError:
-            connection_logger.info("conversation rejected")
+            connection_logger.bind(reject_reason="invalid_origin").info("对话连接被拒绝")
             await websocket.close(code=1008)
             return
         if not _origin_is_allowed(websocket, normalized_origin, settings):
-            connection_logger.info("conversation rejected")
+            connection_logger.bind(reject_reason="origin_not_allowed").info("对话连接被拒绝")
             await websocket.close(code=1008)
             return
     admin_session = websocket.scope.get("session")
@@ -150,12 +150,12 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
     if not is_administrator:
         authorization = websocket.headers.get("authorization", "")
         if repository is None or not authorization.startswith("Bearer "):
-            connection_logger.info("conversation rejected")
+            connection_logger.bind(reject_reason="missing_authorization").info("对话连接被拒绝")
             await websocket.close(code=1008)
             return
         client = await repository.authenticate(authorization.removeprefix("Bearer "))
         if client is None:
-            connection_logger.info("conversation rejected")
+            connection_logger.bind(reject_reason="invalid_client_key").info("对话连接被拒绝")
             await websocket.close(code=1008)
             return
         client_id = client.id
@@ -172,13 +172,13 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
                 message_id=data.get("message_id"),
                 response_id=data.get("response_id"),
                 error_code=data.get("code"),
-            ).warning("conversation generation error")
+            ).warning("对话生成错误")
         await raw_send(event)
 
     is_registered = False
     if client_id is not None:
         if presence is None:
-            connection_logger.info("conversation rejected")
+            connection_logger.bind(reject_reason="presence_unavailable").info("对话连接被拒绝")
             await websocket.close(code=1013)
             return
         previous_connection = await presence.replace(
@@ -202,7 +202,7 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
                 },
             )
         )
-        connection_logger.info("conversation connected")
+        connection_logger.info("对话已连接")
         while True:
             message_id: str | None = None
             response_id: str | None = None
@@ -217,24 +217,38 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
                 event = parse_client_event(payload, settings.max_message_length, settings.max_image_urls)
                 if isinstance(event, MessageCreate):
                     message_id = event.data.message_id
+                    connection_logger.bind(
+                        event_type=event.type,
+                        message_id=message_id,
+                        image_count=len(event.data.image_urls or event.data.image_ids or ()),
+                    ).info("收到对话事件")
                     image_urls = tuple(event.data.image_urls or ())
                     if event.data.image_ids is not None:
                         image_urls = _uploaded_image_urls(event.data.image_ids, settings.port)
-                    session.start(event.data.message_id, event.data.content, image_urls)
+                    response_id = session.start(event.data.message_id, event.data.content, image_urls)
+                    connection_logger.bind(message_id=message_id, response_id=response_id).info("对话生成开始")
                 elif isinstance(event, ActionResult):
+                    connection_logger.bind(
+                        event_type=event.type,
+                        message_id=event.data.message_id,
+                        response_id=event.data.response_id,
+                    ).info("收到对话事件")
                     if event.data.status != "success":
                         await _send_camera_failure(raw_send, event)
                 elif isinstance(event, ResponseCancel):
                     response_id = event.data.response_id
+                    connection_logger.bind(event_type=event.type, response_id=response_id).info("收到对话事件")
                     await session.cancel(event.data.response_id)
+                    connection_logger.bind(response_id=response_id).info("请求取消对话生成")
                 elif isinstance(event, Ping):
+                    connection_logger.bind(event_type=event.type).info("收到对话事件")
                     await raw_send(ServerEvent.create("pong", {"correlation_id": event.data.correlation_id}))
             except SomaiError as safe_error:
                 connection_logger.bind(
                     message_id=message_id,
                     response_id=response_id,
                     error_code=safe_error.code,
-                ).info("conversation request error")
+                ).info("对话请求错误")
                 await raw_send(
                     _error_event(
                         safe_error,
@@ -250,4 +264,4 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
         finally:
             if is_registered and client_id is not None and presence is not None:
                 await presence.disconnect(client_id, connection_id)
-            connection_logger.info("conversation disconnected")
+            connection_logger.info("对话已断开")

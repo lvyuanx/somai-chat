@@ -31,6 +31,70 @@ CONSOLE_LEVEL_COLORS = {
 _APPLICATION_LOGGER = "somai_chat"
 _DEPENDENCY_LOGGERS = ("langchain", "langchain_openai", "openai", "httpx", "httpcore")
 _CORRELATION_FIELDS = ("connection_id", "conversation_id", "message_id", "response_id", "error_code")
+_SAFE_DETAIL_FIELDS = (
+    "capability",
+    "capability_count",
+    "client_count",
+    "client_id",
+    "enabled",
+    "environment",
+    "event_type",
+    "image_count",
+    "model",
+    "online_count",
+    "reject_reason",
+    "search_enabled",
+    "vision_enabled",
+    "weather_enabled",
+)
+_FIELD_LABELS = {
+    "capability": "能力",
+    "capability_count": "能力数",
+    "client_count": "客户端数",
+    "client_id": "客户端ID",
+    "connection_id": "连接ID",
+    "conversation_id": "会话ID",
+    "enabled": "已启用",
+    "environment": "环境",
+    "error_code": "错误码",
+    "event_type": "事件类型",
+    "image_count": "图片数",
+    "message_id": "消息ID",
+    "model": "模型",
+    "online_count": "在线数",
+    "reject_reason": "拒绝原因",
+    "response_id": "回复ID",
+    "search_enabled": "搜索启用",
+    "vision_enabled": "视觉启用",
+    "weather_enabled": "天气启用",
+}
+_VALUE_LABELS = {
+    "capability": {
+        "time": "时间",
+        "weather": "天气",
+        "web_search": "联网搜索",
+    },
+    "environment": {
+        "development": "开发",
+        "production": "生产",
+        "test": "测试",
+    },
+    "event_type": {
+        "action.result": "动作结果",
+        "message.create": "创建消息",
+        "ping": "心跳",
+        "response.cancel": "取消回复",
+    },
+    "reject_reason": {
+        "invalid_client_key": "客户端 Key 无效",
+        "invalid_conversation_id": "会话ID非法",
+        "invalid_origin": "Origin 非法",
+        "missing_authorization": "缺少认证",
+        "origin_not_allowed": "Origin 未允许",
+        "presence_unavailable": "在线状态服务不可用",
+        "runtime_unavailable": "运行时不可用",
+    },
+}
 _configured_key: tuple[Path, str, int] | None = None
 
 
@@ -97,8 +161,21 @@ def _safe_correlation_suffix(record: Record) -> str:
     extra = record["extra"]
     if not isinstance(extra, dict):
         return ""
-    parts = [f"{field}={extra[field]}" for field in _CORRELATION_FIELDS if isinstance(extra.get(field), str)]
+    parts = []
+    for field in (*_CORRELATION_FIELDS, *_SAFE_DETAIL_FIELDS):
+        value = extra.get(field)
+        if isinstance(value, str | int | bool):
+            label = _FIELD_LABELS.get(field, field)
+            parts.append(f"{label}={_display_value(field, value)}")
     return "" if not parts else " | " + " | ".join(parts)
+
+
+def _display_value(field: str, value: str | int | bool) -> str:
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    if isinstance(value, str):
+        return _VALUE_LABELS.get(field, {}).get(value, value)
+    return str(value)
 
 
 def _plain_format(record: Record) -> str:

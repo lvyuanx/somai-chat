@@ -58,8 +58,8 @@ async def make_service(repository: MemoryRepository, weather_key: str | None = "
     service = CapabilityService(
         repository,
         encryption_secret="capability-encryption",
-        weather_http_client=httpx.AsyncClient(),
-        search_http_client=httpx.AsyncClient(),
+        weather_http_client=httpx.AsyncClient(trust_env=False),
+        search_http_client=httpx.AsyncClient(trust_env=False),
     )
     await service.initialize(seeds(weather_key))
     return service

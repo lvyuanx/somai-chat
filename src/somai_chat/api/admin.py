@@ -12,8 +12,10 @@ from somai_chat.admin.auth import establish_session, require_admin, require_csrf
 from somai_chat.admin.models import Client
 from somai_chat.admin.presence import ClientPresenceRegistry
 from somai_chat.admin.repository import ClientRepository
+from somai_chat.core.logging import get_logger
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
+logger = get_logger()
 
 
 class LoginInput(BaseModel):
@@ -56,19 +58,25 @@ async def login(request: Request, payload: LoginInput) -> dict[str, object]:
         or payload.username != settings.admin_username
         or not verify_password(payload.password, settings.admin_password.get_secret_value())
     ):
+        logger.warning("管理员登录失败")
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    return {"username": settings.admin_username, "csrf_token": establish_session(request, settings.admin_username)}
+    response = {"username": settings.admin_username, "csrf_token": establish_session(request, settings.admin_username)}
+    logger.info("管理员登录成功")
+    return response
 
 
 @router.delete("/session", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(request: Request) -> None:
     require_csrf(request)
     request.session.clear()
+    logger.info("管理员退出登录")
 
 
 @router.get("/session")
 async def session(request: Request) -> dict[str, str]:
-    return {"username": require_admin(request), "csrf_token": request.session["csrf"]}
+    username = require_admin(request)
+    logger.info("管理员会话已检查")
+    return {"username": username, "csrf_token": request.session["csrf"]}
 
 
 @router.get("/clients")
@@ -91,6 +99,7 @@ async def list_clients(request: Request) -> list[dict[str, object]]:
                 "can_reveal_key": can_reveal_key,
             }
         )
+    logger.bind(client_count=len(results), online_count=len(online_client_ids)).info("管理员查看客户端列表")
     return results
 
 
@@ -103,6 +112,7 @@ async def create_client(request: Request, payload: ClientInput) -> dict[str, obj
         if getattr(error.orig, "args", (None,))[0] == 1062 or "duplicate" in str(error.orig).lower():
             raise HTTPException(status_code=409, detail="Client name already exists") from None
         raise
+    logger.bind(client_id=str(client.id)).info("管理员创建客户端")
     return {"id": str(client.id), "name": client.name, "key": key}
 
 
@@ -111,6 +121,7 @@ async def set_client_enabled(request: Request, client_id: UUID, enabled: bool) -
     require_csrf(request)
     if not await _repository(request).set_enabled(client_id, enabled):
         raise HTTPException(status_code=404, detail="Client not found")
+    logger.bind(client_id=str(client_id), enabled=enabled).info("管理员修改客户端启用状态")
     return {"enabled": enabled}
 
 
@@ -120,6 +131,7 @@ async def rotate_key(request: Request, client_id: UUID, payload: KeyRotationInpu
     key = await _repository(request).rotate(client_id, payload.expires_at)
     if key is None:
         raise HTTPException(status_code=404, detail="Client not found")
+    logger.bind(client_id=str(client_id)).info("管理员轮换客户端 Key")
     return {"key": key}
 
 
@@ -129,4 +141,5 @@ async def reveal_key(request: Request, client_id: UUID) -> dict[str, str]:
     key = await _repository(request).reveal_key(client_id)
     if key is None:
         raise HTTPException(status_code=404, detail="Key cannot be revealed; rotate it to create a new key")
+    logger.bind(client_id=str(client_id)).info("管理员查看客户端 Key")
     return {"key": key}

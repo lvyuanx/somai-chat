@@ -40,7 +40,7 @@ MVP 使用进程内 Checkpointer 和会话并发控制，仅支持单进程部�
 
 - `make install`：执行 `uv sync --locked --extra dev`，严格按 `uv.lock` 创建开发环境并 editable 安装项目。
 - `make dev`：通过 `python -m somai_chat.main` 启动本地开发服务；监听地址、端口、reload 模式与
-  WebSocket 传输硬上限均来自同一个 `Settings` 实例。
+  WebSocket 传输硬上限均来自同一个 `Settings` 实例，Uvicorn 自身日志级别固定为 `error`。
 - `make format`：格式化代码。
 - `make lint`：运行 Ruff 静态检查。
 - `make typecheck`：运行严格 mypy 检查。

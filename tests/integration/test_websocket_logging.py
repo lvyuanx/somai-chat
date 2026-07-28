@@ -77,11 +77,45 @@ def test_invalid_message_is_logged_once_per_connection(tmp_path: Path, monkeypat
             assert socket.receive_json()["data"]["code"] == "INVALID_MESSAGE"
 
     log_text = read_project_log(tmp_path)
-    lines = project_lines(log_text, "conversation request error")
+    lines = project_lines(log_text, "对话请求错误")
     assert len(lines) == 1
-    assert "error_code=INVALID_MESSAGE" in lines[0]
-    assert "conversation_id=conv_invalid" in lines[0]
-    assert "connection_id=conn_" in lines[0]
+    assert "错误码=INVALID_MESSAGE" in lines[0]
+    assert "会话ID=conv_invalid" in lines[0]
+    assert "连接ID=conn_" in lines[0]
+
+
+def test_rejected_connection_logs_safe_reason(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    with make_client(BlockingRuntime()) as client:
+        with client.websocket_connect("/api/v1/chat/ws/invalid.conversation") as socket:
+            assert socket.receive() == {"type": "websocket.close", "code": 1008, "reason": ""}
+
+    log_text = read_project_log(tmp_path)
+    lines = project_lines(log_text, "对话连接被拒绝")
+    assert len(lines) == 1
+    assert "拒绝原因=会话ID非法" in lines[0]
+    assert "会话ID=invalid.conversation" not in lines[0]
+
+
+def test_message_and_cancel_events_emit_simple_project_logs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    with make_client(BlockingRuntime()) as client:
+        with client.websocket_connect("/api/v1/chat/ws/conv_events") as socket:
+            socket.receive_json()
+            socket.send_json({"type": "message.create", "data": {"message_id": "msg_1", "content": "secret body"}})
+            started = socket.receive_json()
+            socket.send_json({"type": "response.cancel", "data": {"response_id": started["data"]["response_id"]}})
+            socket.receive_json()
+
+    log_text = read_project_log(tmp_path)
+    assert "收到对话事件" in log_text
+    assert "对话生成开始" in log_text
+    assert "请求取消对话生成" in log_text
+    assert "事件类型=创建消息" in log_text
+    assert "事件类型=取消回复" in log_text
+    assert "消息ID=msg_1" in log_text
+    assert f"回复ID={started['data']['response_id']}" in log_text
+    assert "secret body" not in log_text
 
 
 def test_busy_error_event_and_log_include_message_id_once(tmp_path: Path, monkeypatch) -> None:
@@ -95,11 +129,11 @@ def test_busy_error_event_and_log_include_message_id_once(tmp_path: Path, monkey
             error = socket.receive_json()
 
     log_text = read_project_log(tmp_path)
-    lines = project_lines(log_text, "conversation request error")
+    lines = project_lines(log_text, "对话请求错误")
     assert error["data"]["message_id"] == "msg_2"
     assert len(lines) == 1
-    assert "error_code=GENERATION_IN_PROGRESS" in lines[0]
-    assert "message_id=msg_2" in lines[0]
+    assert "错误码=GENERATION_IN_PROGRESS" in lines[0]
+    assert "消息ID=msg_2" in lines[0]
 
 
 def test_cancel_error_event_and_log_include_response_id_once(tmp_path: Path, monkeypatch) -> None:
@@ -111,11 +145,11 @@ def test_cancel_error_event_and_log_include_response_id_once(tmp_path: Path, mon
             error = socket.receive_json()
 
     log_text = read_project_log(tmp_path)
-    lines = project_lines(log_text, "conversation request error")
+    lines = project_lines(log_text, "对话请求错误")
     assert error["data"]["response_id"] == "resp_missing"
     assert len(lines) == 1
-    assert "error_code=CANCEL_NOT_FOUND" in lines[0]
-    assert "response_id=resp_missing" in lines[0]
+    assert "错误码=CANCEL_NOT_FOUND" in lines[0]
+    assert "回复ID=resp_missing" in lines[0]
 
 
 def test_generation_error_is_logged_once_with_all_known_ids_and_no_secrets(tmp_path: Path, monkeypatch) -> None:
@@ -129,13 +163,13 @@ def test_generation_error_is_logged_once_with_all_known_ids_and_no_secrets(tmp_p
             error = socket.receive_json()
 
     log_text = read_project_log(tmp_path)
-    lines = project_lines(log_text, "conversation generation error")
+    lines = project_lines(log_text, "对话生成错误")
     assert len(lines) == 1
-    assert "error_code=GENERATION_FAILED" in lines[0]
-    assert "connection_id=conn_" in lines[0]
-    assert "conversation_id=conv_failure" in lines[0]
-    assert "message_id=msg_failure" in lines[0]
-    assert f"response_id={error['data']['response_id']}" in lines[0]
+    assert "错误码=GENERATION_FAILED" in lines[0]
+    assert "连接ID=conn_" in lines[0]
+    assert "会话ID=conv_failure" in lines[0]
+    assert "消息ID=msg_failure" in lines[0]
+    assert f"回复ID={error['data']['response_id']}" in lines[0]
     assert "secret body" not in log_text
     assert "test-api-key" not in log_text
     assert "provider-secret-detail" not in log_text
@@ -149,16 +183,10 @@ def test_connections_have_distinct_ids_on_every_lifecycle_log(tmp_path: Path, mo
                 socket.receive_json()
 
     log_text = read_project_log(tmp_path)
-    lifecycle = [
-        line
-        for line in log_text.splitlines()
-        if "conversation connected" in line or "conversation disconnected" in line
-    ]
+    lifecycle = [line for line in log_text.splitlines() if "对话已连接" in line or "对话已断开" in line]
     assert len(lifecycle) == 4
     ids_by_conversation: dict[str, set[str]] = {}
     for line in lifecycle:
-        ids_by_conversation.setdefault(extract_field(line, "conversation_id"), set()).add(
-            extract_field(line, "connection_id")
-        )
+        ids_by_conversation.setdefault(extract_field(line, "会话ID"), set()).add(extract_field(line, "连接ID"))
     assert {name: len(ids) for name, ids in ids_by_conversation.items()} == {"conv_one": 1, "conv_two": 1}
     assert ids_by_conversation["conv_one"].isdisjoint(ids_by_conversation["conv_two"])

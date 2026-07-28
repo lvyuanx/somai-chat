@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
@@ -71,6 +72,37 @@ def test_application_passes_log_dir_to_logging_setup(
         pass
 
     assert captured == {"level": "INFO", "log_dir": tmp_path / "runtime-logs", "stream": None}
+
+
+def test_application_lifespan_emits_project_startup_and_shutdown_logs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Closeable:
+        async def close(self) -> None:
+            return None
+
+    def create_sessions(url: str) -> tuple[Closeable, object]:
+        del url
+        return Closeable(), object()
+
+    settings = Settings(
+        _env_file=None,
+        openai_api_key="secret",
+        openai_model="model",
+        log_dir=tmp_path / "logs",
+    )
+    monkeypatch.setattr(main_module, "create_session_factory", create_sessions)
+
+    with TestClient(main_module.create_app(settings=settings, runtime=cast(ConversationRuntime, object()))):
+        pass
+
+    project_log = tmp_path / "logs" / f"{date.today().isoformat()}-project.log"
+    log_text = project_log.read_text(encoding="utf-8")
+    assert "应用启动开始" in log_text
+    assert "应用启动完成" in log_text
+    assert "应用关闭完成" in log_text
+    assert "secret" not in log_text
 
 
 def test_application_registers_capability_admin_routes() -> None:
@@ -160,6 +192,7 @@ def test_run_loads_dotenv_and_passes_server_settings_to_uvicorn(
     assert captured == {
         "app": "somai_chat.main:app",
         "host": "127.0.0.1",
+        "log_level": "error",
         "port": 9123,
         "reload": False,
         "ws_max_size": 34567,

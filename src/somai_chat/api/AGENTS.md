@@ -101,10 +101,14 @@ Application 的 `ConversationRuntime`/`ConversationSession` 及 Core 日志约�
 应用组合根在 lifespan 中把配置与 Runtime 写入 `app.state`；
 健康与 WebSocket 路由只读取注入结果，
 readiness 不调用 Runtime 或模型。
-每个连接生成独立 `connection_id`。连接生命周期日志始终同时携带 connection/conversation ID；
+每个连接生成独立 `connection_id`。连接生命周期日志始终同时携带连接 ID 与会话 ID；
 可恢复请求错误在映射点记录一次，Session 生成错误在发送回调记录一次，避免重复日志。
+WebSocket 会记录安全的事件类型、消息/回复 ID、图片数量、生成开始、取消请求与拒绝原因；
+非法会话 ID 只记录拒绝原因，不回显原始非法 ID。
 这些连接日志通过 `core.logging.get_logger()` 写入 Loguru 项目输出，并绑定安全关联字段，
-不会把消息正文、模型文本或密钥带入日志消息。
+消息和常用字段展示为中文，不会把消息正文、模型文本或密钥带入日志消息。
+管理员登录、会话检查、客户端列表/创建/启停/轮换 Key/查看 Key、能力列表/更新/查看 Key
+都会记录固定中文项目日志，只包含数量、客户端 ID、能力 key 和启用状态等安全字段。
 
 ## 扩展方式
 

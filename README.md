@@ -33,7 +33,7 @@ make dev
 ```
 
 打开 `http://localhost:8000/`。`make dev` 使用 `python -m somai_chat.main`，因此监听地址、端口、development reload
-和 WebSocket 传输硬上限均来自 Settings。
+和 WebSocket 传输硬上限均来自 Settings；Uvicorn 自身日志级别固定为 `error`，避免控制台被启动、访问日志刷屏。
 
 ## 配置
 
@@ -186,8 +186,10 @@ docker run --rm --env-file .env -e SOMAI_ENVIRONMENT=production -e SOMAI_PORT=90
 MVP 的 Checkpointer、会话锁和生成状态都在单进程内存中：重启即丢失，不能直接增加 Uvicorn worker、容器副本或多实例。扩容前必须替换为持久化/共享 Checkpointer 与分布式会话锁。
 
 应用日志由 Loguru 统一输出：`source="project"` 进入项目与控制台日志，root/Uvicorn 运维日志不被替换，
-LangChain/OpenAI/httpx/httpcore 动态日志经拦截器进入统一日志流。任何日志都不得记录 API Key、完整用户消息、
-完整模型回复或供应商原始错误。文本同时受 code point、应用可恢复 UTF-8 字节上限与更大的传输硬上限约束。
+LangChain/OpenAI/httpx/httpcore 动态日志经拦截器进入统一日志流。项目日志会记录应用启动/关闭、管理员会话与客户端管理、
+能力管理、WebSocket 连接、事件类型、生成开始/取消、拒绝原因和安全关联 ID；项目日志消息、常用字段名和部分稳定值
+使用中文展示，便于本地开发和排障时直接阅读。任何日志都不得记录 API Key、完整用户消息、完整模型回复或供应商原始错误。
+文本同时受 code point、应用可恢复 UTF-8 字节上限与更大的传输硬上限约束。
 
 未来扩展点：向 `build_conversation_graph` 注入持久 Checkpointer；在 Agent Graph 增加明确的工具/动作节点和运行时能力清单；端侧通过当前文本 WebSocket 前后接入 ASR/TTS。新增事件应保持统一信封和既有终态语义。
 
